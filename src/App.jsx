@@ -1210,9 +1210,10 @@ export default function Root() {
     <div>
       {mode === "reseller" && (
         <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: `linear-gradient(160deg, ${DARK} 0%, ${TEAL} 55%, #2E86AB 100%)`, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
-          <div style={{ padding: "28px 24px 0", textAlign: "center" }}>
+          <div style={{ padding: "24px 24px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <img src="/1-ICONE-POISSON-PANAMAX-Original.png" alt="Panamax" style={{ width: 72, height: 72, objectFit: "contain", marginBottom: 6 }} />
             <div style={{ color: "#fff", fontSize: 21, fontWeight: 800 }}>Panamax Excursions</div>
-            <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginTop: 4 }}>Portail Commercial · Réservations en ligne</div>
+            <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginTop: 3 }}>Portail Commercial · Réservations en ligne</div>
           </div>
           <ResellerPortal data={data} save={save} />
         </div>
