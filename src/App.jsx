@@ -1012,7 +1012,8 @@ function AdminView({ data, save, reload }) {
           {data.dates.map(entry => {
             const dp     = entry.boats.reduce((s, b) => s + boatPax(b), 0);
             const dr     = entry.boats.reduce((s, b) => s + boatRev(b), 0);
-            const isOpen = exp[entry.id];
+            const entryKey = entry.id || entry.label;
+            const isOpen = exp[entryKey];
             // All bookings for the day across all boats
             const allBookings = entry.boats.flatMap(boat => boat.bookings.map(bk => ({ ...bk, boat })));
 
@@ -1020,7 +1021,7 @@ function AdminView({ data, save, reload }) {
               <div key={entry.id} style={{ background: "#fff", borderRadius: 14, marginBottom: 10, overflow: "hidden", border: "1px solid #deeaf0", boxShadow: "0 1px 6px rgba(26,95,122,0.07)" }}>
 
                 {/* ── Date header (always visible) ── */}
-                <Row style={{ padding: "13px 16px", cursor: "pointer", userSelect: "none", background: isOpen ? "#F0F8FB" : "#fff" }} onClick={() => toggle(entry.id)}>
+                <Row style={{ padding: "13px 16px", cursor: "pointer", userSelect: "none", background: isOpen ? "#F0F8FB" : "#fff" }} onClick={() => toggle(entryKey)}>
                   <span style={{ fontSize: 16 }}>📅</span>
                   <span style={{ fontSize: 15, fontWeight: 700, color: TEAL, flex: 1 }}>{entry.label}</span>
                   <Chip bg="#EBF7FA" color={TEAL}>{dp} pax</Chip>
@@ -1031,7 +1032,7 @@ function AdminView({ data, save, reload }) {
                   </button>
                   {delDate === entry.id
                     ? <Row gap={5} onClick={e => e.stopPropagation()}><Btn small variant="danger" onClick={() => doDelDate(entry.id)}>Supprimer</Btn><Btn small variant="ghost" onClick={() => setDelDate(null)}>✕</Btn></Row>
-                    : <button onClick={e => { e.stopPropagation(); setDelDate(entry.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", fontSize: 16 }}>🗑</button>
+                    : <button onClick={e => { e.stopPropagation(); setDelDate(entryKey); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", fontSize: 16 }}>🗑</button>
                   }
                   <span style={{ color: "#bbb", fontSize: 13, marginLeft: 4 }}>{isOpen ? "▲" : "▼"}</span>
                 </Row>
