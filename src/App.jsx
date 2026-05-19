@@ -993,7 +993,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         </div>
 
         {/* Boats capacity */}
-        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 12 }}>
           {entry.boats.map(boat => {
             const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
             const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
@@ -1020,7 +1020,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
               </div>
             );
           })}
-        </Grid>
+        </div>
 
         {/* All bookings */}
         <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #deeaf0", overflow: "hidden" }}>
@@ -1050,7 +1050,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
             return (
               <div key={bk.id} style={{ borderBottom: idx < allBookings.length-1 ? "1px solid #f5f8fa" : "none" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 14, padding: "14px 20px", alignItems: "start" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10, padding: "12px 14px", alignItems: "start" }}>
 
                   {/* Source + bateau */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center", minWidth: 56 }}>
@@ -1116,12 +1116,12 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
       </Row>
 
       {/* Day headers */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 4 }}>
-        {DAYS_SHORT.map(d => <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#888", padding: "4px 0" }}>{d}</div>)}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 2, marginBottom: 2 }}>
+        {DAYS_SHORT.map(d => <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: "#888", padding: "3px 0" }}>{d}</div>)}
       </div>
 
       {/* Calendar grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 2, marginBottom: 14 }}>
         {cells.map((cell, i) => {
           if (!cell) return <div key={"e"+i} />;
           const key   = `${cell.getFullYear()}-${cell.getMonth()}-${cell.getDate()}`;
@@ -1248,9 +1248,9 @@ function AdminView({ data, save, reload }) {
   const pc   = (data.pending || []).length;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#EBF7FA", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+    <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: "#EBF7FA", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
       {/* Header */}
-      <div style={{ background: DARK, color: "#fff", padding: "0 20px", height: 56, display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, zIndex: 100 }}>
+      <div style={{ background: DARK, color: "#fff", padding: "0 10px", height: 56, display: "flex", alignItems: "center", gap: 8, position: "sticky", top: 0, zIndex: 100, overflowX: "auto" }}>
         <span style={{ fontSize: 22 }}>🐟</span>
         <span style={{ fontSize: 17, fontWeight: 700 }}>Panamax · Admin</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
@@ -1261,11 +1261,11 @@ function AdminView({ data, save, reload }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 980, margin: "0 auto", padding: "16px 16px 60px" }}>
+      <div style={{ maxWidth: 980, margin: "0 auto", padding: "12px 10px 60px", boxSizing: "border-box", width: "100%", overflowX: "hidden" }}>
 
         {/* ── Planning tab ── */}
         {tab === "planning" && (<>
-          <Grid cols="repeat(3,1fr)" gap={10} style={{ marginBottom: 18 }}>
+          <Grid cols="repeat(3,1fr)" gap={8} style={{ marginBottom: 14 }}>
             {[{ v: fmtEur(gRev), l: "Chiffre d'affaires", i: "💰" }, { v: gPax, l: "Passagers", i: "👥" }, { v: gBk, l: "Réservations", i: "📋" }].map(({ v, l, i }) => (
               <div key={l} style={{ background: "#fff", borderRadius: 12, padding: "14px 18px", textAlign: "center", border: "1px solid #e0eef3" }}>
                 <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>{i} {l}</div>
@@ -1303,6 +1303,8 @@ function AdminView({ data, save, reload }) {
                         <span style={{ flex: 1, fontWeight: 500 }}>{p.name}</span>
                         {p.phone && <span style={{ color: "#999", fontSize: 11 }}>{p.phone}</span>}
                         <span style={{ fontWeight: 700, color: TEAL }}>{fmtEur(p.adults * P_AD + p.children * P_CH)}</span>
+                  </Row>
+                  <Row gap={8} style={{ marginTop: 8 }}>
                         <Btn small variant="success" onClick={() => approve(p)}>✓ Valider</Btn>
                         <Btn small variant="danger"  onClick={() => reject(p)}>✕ Refuser</Btn>
                       </Row>
