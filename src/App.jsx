@@ -915,6 +915,279 @@ function WooTab({ data, save, notify }) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// ADMIN CALENDAR COMPONENT
+// ════════════════════════════════════════════════════════════════
+function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdding, delBk, setDelBk, saveEdit, saveAdd, doDelBk, copied, copyWA }) {
+  const today = new Date();
+  const [year,     setYear]     = useState(today.getFullYear());
+  const [month,    setMonth]    = useState(today.getMonth());
+  const [selDay,   setSelDay]   = useState(null); // selected date entry
+  const [addDate,  setAddDate]  = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [delDate,  setDelDate]  = useState(null);
+
+  const prevMonth = () => { if (month === 0) { setYear(y => y-1); setMonth(11); } else setMonth(m => m-1); };
+  const nextMonth = () => { if (month === 11) { setYear(y => y+1); setMonth(0); } else setMonth(m => m+1); };
+
+  // Build date lookup
+  const byDay = {};
+  for (const entry of data.dates) {
+    const d = dateFromLabel(entry.label);
+    if (!d) continue;
+    byDay[`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`] = entry;
+  }
+
+  // Calendar grid
+  const firstDay = new Date(year, month, 1);
+  const lastDay  = new Date(year, month+1, 0);
+  let startDow = firstDay.getDay();
+  startDow = startDow === 0 ? 6 : startDow - 1;
+  const cells = Array(startDow).fill(null);
+  for (let d = 1; d <= lastDay.getDate(); d++) cells.push(new Date(year, month, d));
+
+  const saveNewDate = () => {
+    if (!newLabel.trim()) return;
+    const next = { ...data, dates: [...data.dates, { id: uid(), label: newLabel.trim(), boats: [
+      { id: uid(), name: "Aloes Vera", emoji: "ferry", bookings: [] },
+      { id: uid(), name: "Panamax",    emoji: "boat",  bookings: [] },
+    ]}]};
+    save(next); setNewLabel(""); setAddDate(false); notify("Date ajoutée ✓");
+  };
+
+  const doDelDate = (id) => {
+    save({ ...data, dates: data.dates.filter(d => d.id !== id) });
+    setDelDate(null); setSelDay(null); notify("Date supprimée");
+  };
+
+  // Selected day detail view
+  if (selDay) {
+    const entry = data.dates.find(d => d.id === selDay) || null;
+    if (!entry) { setSelDay(null); return null; }
+    const allBookings = entry.boats.flatMap(boat => boat.bookings.map(bk => ({ ...bk, boat })));
+    const dp = entry.boats.reduce((s, b) => s + boatPax(b), 0);
+    const dr = entry.boats.reduce((s, b) => s + boatRev(b), 0);
+
+    return (
+      <div>
+        {/* Day detail header */}
+        <div style={{ background: "#fff", borderRadius: 14, padding: "16px 20px", marginBottom: 12, border: "1px solid #deeaf0" }}>
+          <Row style={{ marginBottom: 12 }}>
+            <button onClick={() => { setSelDay(null); setEditing(null); setAdding(null); setDelBk(null); }}
+              style={{ background: "#EBF7FA", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", color: TEAL, fontWeight: 700, fontSize: 13 }}>
+              ← Calendrier
+            </button>
+            <span style={{ fontSize: 17, fontWeight: 800, color: TEAL, flex: 1, textAlign: "center" }}>📅 {entry.label}</span>
+            <button onClick={e => { e.stopPropagation(); copyWA(entry); }}
+              style={{ background: copied === entry.id ? GREEN : "#fff", color: copied === entry.id ? "#fff" : "#555", border: "1px solid #ddd", borderRadius: 8, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+              {copied === entry.id ? "✓ Copié !" : "📋 WhatsApp"}
+            </button>
+            {delDate === entry.id
+              ? <Row gap={6}><Btn small variant="danger" onClick={() => doDelDate(entry.id)}>Supprimer</Btn><Btn small variant="ghost" onClick={() => setDelDate(null)}>✕</Btn></Row>
+              : <button onClick={() => setDelDate(entry.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", fontSize: 18 }}>🗑</button>
+            }
+          </Row>
+          <Row gap={16}>
+            <Chip bg="#EBF7FA" color={TEAL}>👥 {dp} passager(s)</Chip>
+            <Chip bg="#FEF0EB" color={CORAL}>💰 {fmtEur(dr)}</Chip>
+          </Row>
+        </div>
+
+        {/* Boats capacity */}
+        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 12 }}>
+          {entry.boats.map(boat => {
+            const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
+            const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
+            const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
+            return (
+              <div key={boat.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #deeaf0" }}>
+                <Row style={{ marginBottom: 8 }}>
+                  <span style={{ fontSize: 18 }}>{icon}</span>
+                  <span style={{ fontWeight: 700, color: DARK, flex: 1, fontSize: 14 }}>{displayName}</span>
+                  <span style={{ fontWeight: 700, color: TEAL, fontSize: 13 }}>{fmtEur(boatRev(boat))}</span>
+                </Row>
+                <CapBar boat={boat} />
+                {!isAdding && (
+                  <button onClick={() => { setEditing(null); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); }}
+                    style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 7, background: "#EBF7FA", border: `1.5px dashed ${TEAL}60`, color: TEAL, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                    + Ajouter une réservation
+                  </button>
+                )}
+                {isAdding && (
+                  <BookingForm title="+ Nouvelle réservation" form={adding.form}
+                    set={f => setAdding(a => ({ ...a, form: f(a.form) }))}
+                    onSave={saveAdd} onCancel={() => setAdding(null)} admin />
+                )}
+              </div>
+            );
+          })}
+        </Grid>
+
+        {/* All bookings */}
+        <div style={{ background: "#fff", borderRadius: 14, border: "1px solid #deeaf0", overflow: "hidden" }}>
+          <div style={{ padding: "12px 20px", borderBottom: "1px solid #f0f5f7", fontWeight: 700, color: TEAL, fontSize: 14 }}>
+            📋 Réservations du jour ({allBookings.length})
+          </div>
+
+          {allBookings.length === 0 && (
+            <div style={{ padding: "30px", textAlign: "center", color: "#bbb", fontSize: 13 }}>Aucune réservation pour cette date.</div>
+          )}
+
+          {allBookings.map((bk, idx) => {
+            const isEd = editing?.boatId === bk.boat.id && editing?.bkId === bk.id;
+            const boatIcon = bk.boat.name === "Aloes Vera" ? "🛥️" : "🚤";
+            const boatName = bk.boat.name === "Aloes Vera" ? "Aloès Vera" : bk.boat.name;
+            const srcColor = SOURCES[bk.source]?.color || "#999";
+            const srcLabel = SOURCES[bk.source]?.label || "?";
+            const isWoo    = bk.source === "woo";
+
+            if (isEd) return (
+              <div key={bk.id} style={{ padding: "0 16px 12px", borderBottom: "1px solid #f0f5f7" }}>
+                <BookingForm title="✏️ Modifier la réservation" form={editing.form}
+                  set={f => setEditing(e => ({ ...e, form: f(e.form) }))}
+                  onSave={saveEdit} onCancel={() => setEditing(null)} admin />
+              </div>
+            );
+
+            return (
+              <div key={bk.id} style={{ borderBottom: idx < allBookings.length-1 ? "1px solid #f5f8fa" : "none" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 14, padding: "14px 20px", alignItems: "start" }}>
+
+                  {/* Source + bateau */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center", minWidth: 56 }}>
+                    <span style={{ background: srcColor, color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 10, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {isWoo ? "🌐 Web" : srcLabel}
+                    </span>
+                    <span style={{ fontSize: 11, color: "#aaa", textAlign: "center" }}>{boatIcon} {boatName}</span>
+                  </div>
+
+                  {/* Infos client */}
+                  <div>
+                    <div style={{ fontWeight: 700, color: DARK, fontSize: 14, marginBottom: 4 }}>{bk.name}</div>
+                    <Row gap={16} style={{ flexWrap: "wrap", marginBottom: 4 }}>
+                      <span style={{ fontSize: 13, color: "#555" }}>
+                        👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
+                      </span>
+                      {bk.phone && <span style={{ fontSize: 13, color: "#888" }}>📞 {bk.phone}</span>}
+                    </Row>
+                    {bk.notes && (
+                      <div style={{ fontSize: 12, color: "#777", fontStyle: "italic", background: "#F8FBFC", borderRadius: 6, padding: "5px 10px", border: "1px solid #eee", marginTop: 4 }}>
+                        📝 {bk.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Prix + actions */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
+                    <span style={{ fontWeight: 800, fontSize: 15, color: bk.price === 0 ? ORANGE : TEAL }}>
+                      {bk.price === 0 ? "Offert" : fmtEur(bk.price)}
+                    </span>
+                    <Row gap={6}>
+                      <button onClick={() => { setAdding(null); setEditing({ dateId: entry.id, boatId: bk.boat.id, bkId: bk.id, form: { ...bk } }); }}
+                        style={{ background: "#EBF7FA", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: TEAL, fontWeight: 600 }}>✏️ Modifier</button>
+                      <button onClick={() => setDelBk(bk.id)}
+                        style={{ background: "#FEF0EB", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: CORAL, fontWeight: 600 }}>🗑</button>
+                    </Row>
+                  </div>
+                </div>
+
+                {delBk === bk.id && (
+                  <Row gap={8} style={{ padding: "6px 20px 12px", background: "#FEF8F6" }}>
+                    <span style={{ fontSize: 12, color: CORAL, flex: 1 }}>Confirmer la suppression de cette réservation ?</span>
+                    <Btn small variant="danger" onClick={() => doDelBk(entry.id, bk.boat.id, bk.id)}>Oui, supprimer</Btn>
+                    <Btn small variant="ghost" onClick={() => setDelBk(null)}>Annuler</Btn>
+                  </Row>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Calendar view ──────────────────────────────────────────
+  return (
+    <div>
+      {/* Month nav */}
+      <Row style={{ justifyContent: "space-between", marginBottom: 16 }}>
+        <button onClick={prevMonth} style={{ background: "#EBF7FA", border: "none", color: TEAL, width: 38, height: 38, borderRadius: 19, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>‹</button>
+        <span style={{ fontSize: 20, fontWeight: 800, color: TEAL }}>{MONTHS[month]} {year}</span>
+        <button onClick={nextMonth} style={{ background: "#EBF7FA", border: "none", color: TEAL, width: 38, height: 38, borderRadius: 19, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>›</button>
+      </Row>
+
+      {/* Day headers */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 4 }}>
+        {DAYS_SHORT.map(d => <div key={d} style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: "#888", padding: "4px 0" }}>{d}</div>)}
+      </div>
+
+      {/* Calendar grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 4, marginBottom: 16 }}>
+        {cells.map((cell, i) => {
+          if (!cell) return <div key={"e"+i} />;
+          const key   = `${cell.getFullYear()}-${cell.getMonth()}-${cell.getDate()}`;
+          const entry = byDay[key];
+          const isToday = cell.toDateString() === today.toDateString();
+          const dp    = entry ? entry.boats.reduce((s, b) => s + boatPax(b), 0) : 0;
+
+          return (
+            <button key={cell.toISOString()}
+              onClick={() => entry && setSelDay(entry.id)}
+              style={{
+                background: isToday ? TEAL : entry ? "#EBF7FA" : "#fff",
+                border: isToday ? `2px solid ${TEAL}` : entry ? `1.5px solid ${TEAL}40` : "1.5px solid #eee",
+                borderRadius: 10, padding: "8px 4px", cursor: entry ? "pointer" : "default",
+                minHeight: 70, display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                transition: "all 0.15s",
+              }}>
+              <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: isToday ? "#fff" : entry ? DARK : "#ccc" }}>
+                {cell.getDate()}
+              </span>
+              {entry && (
+                <div style={{ width: "100%" }}>
+                  {entry.boats.map(boat => {
+                    const r  = spots(boat);
+                    const p  = pct(boat);
+                    const bc = barColor(boat);
+                    return (
+                      <div key={boat.id} style={{ padding: "2px 4px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 7, color: isToday ? "rgba(255,255,255,0.7)" : "#888" }}>
+                            {boat.name === "Aloes Vera" ? "Aloès" : "Panamax"}
+                          </span>
+                          <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>
+                            {r <= 0 ? "🚫" : `${r}p`}
+                          </span>
+                        </div>
+                        <div style={{ height: 3, borderRadius: 2, background: isToday ? "rgba(255,255,255,0.2)" : "#ddd", overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: `${p}%`, background: isToday ? "#fff" : bc, borderRadius: 2 }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {dp > 0 && <div style={{ textAlign: "center", fontSize: 8, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.8)" : TEAL, marginTop: 2 }}>{dp} pax</div>}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Add date */}
+      {addDate
+        ? <div style={{ background: "#fff", borderRadius: 12, padding: 16, border: `1.5px dashed ${TEAL}60`, marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, color: TEAL, marginBottom: 10 }}>+ Nouvelle date</div>
+            <FInput value={newLabel} onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && saveNewDate()} placeholder="ex: Mercredi 29/05" />
+            <Row gap={8} style={{ marginTop: 10 }}><Btn onClick={saveNewDate}>Créer</Btn><Btn variant="ghost" onClick={() => { setAddDate(false); setNewLabel(""); }}>Annuler</Btn></Row>
+          </div>
+        : <button onClick={() => setAddDate(true)} style={{ width: "100%", padding: 12, borderRadius: 12, background: "transparent", border: `1.5px dashed ${TEAL}60`, color: TEAL, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
+            + Nouvelle date
+          </button>
+      }
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
 // ADMIN VIEW
 // ════════════════════════════════════════════════════════════════
 function AdminView({ data, save, reload }) {
@@ -1000,167 +1273,9 @@ function AdminView({ data, save, reload }) {
               </div>
             ))}
           </Grid>
+          <AdminCalendar data={data} save={save} notify={notify} editing={editing} setEditing={setEditing} adding={adding} setAdding={setAdding} delBk={delBk} setDelBk={setDelBk} saveEdit={saveEdit} saveAdd={saveAdd} doDelBk={doDelBk} copied={copied} copyWA={copyWA} />
 
-          {data.dates.length === 0 && (
-            <div style={{ textAlign: "center", padding: "60px 20px", color: "#888" }}>
-              <div style={{ fontSize: 52, marginBottom: 12 }}>🚤</div>
-              <p style={{ fontSize: 16, marginBottom: 20 }}>Aucune date — importez ou créez une date.</p>
-              <Btn onClick={() => setTab("import")}>⬆️ Importer le planning WhatsApp</Btn>
-            </div>
-          )}
 
-          {data.dates.map(entry => {
-            const dp     = entry.boats.reduce((s, b) => s + boatPax(b), 0);
-            const dr     = entry.boats.reduce((s, b) => s + boatRev(b), 0);
-            const entryKey = entry.id || entry.label;
-            const isOpen = exp[entryKey];
-            // All bookings for the day across all boats
-            const allBookings = entry.boats.flatMap(boat => boat.bookings.map(bk => ({ ...bk, boat })));
-
-            return (
-              <div key={entry.id} style={{ background: "#fff", borderRadius: 14, marginBottom: 10, overflow: "hidden", border: "1px solid #deeaf0", boxShadow: "0 1px 6px rgba(26,95,122,0.07)" }}>
-
-                {/* ── Date header (always visible) ── */}
-                <Row style={{ padding: "13px 16px", cursor: "pointer", userSelect: "none", background: isOpen ? "#F0F8FB" : "#fff" }} onClick={() => toggle(entryKey)}>
-                  <span style={{ fontSize: 16 }}>📅</span>
-                  <span style={{ fontSize: 15, fontWeight: 700, color: TEAL, flex: 1 }}>{entry.label}</span>
-                  <Chip bg="#EBF7FA" color={TEAL}>{dp} pax</Chip>
-                  <Chip bg="#FEF0EB" color={CORAL}>{fmtEur(dr)}</Chip>
-                  <button onClick={e => { e.stopPropagation(); copyWA(entry); }}
-                    style={{ background: copied === entry.id ? GREEN : "#fff", color: copied === entry.id ? "#fff" : "#555", border: "1px solid #ddd", borderRadius: 6, padding: "4px 11px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-                    {copied === entry.id ? "✓ Copié !" : "📋 WhatsApp"}
-                  </button>
-                  {delDate === entry.id
-                    ? <Row gap={5} onClick={e => e.stopPropagation()}><Btn small variant="danger" onClick={() => doDelDate(entry.id)}>Supprimer</Btn><Btn small variant="ghost" onClick={() => setDelDate(null)}>✕</Btn></Row>
-                    : <button onClick={e => { e.stopPropagation(); setDelDate(entryKey); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", fontSize: 16 }}>🗑</button>
-                  }
-                  <span style={{ color: "#bbb", fontSize: 13, marginLeft: 4 }}>{isOpen ? "▲" : "▼"}</span>
-                </Row>
-
-                {/* ── Dropdown content ── */}
-                {isOpen && (
-                  <div style={{ borderTop: "1px solid #e8f2f7" }}>
-
-                    {/* Boats capacity summary */}
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderBottom: "1px solid #f0f5f7" }}>
-                      {entry.boats.map(boat => {
-                        const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-                        const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
-                        const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
-                        return (
-                          <div key={boat.id} style={{ padding: "10px 16px", borderRight: "1px solid #f0f5f7" }}>
-                            <Row style={{ marginBottom: 6 }}>
-                              <span style={{ fontSize: 16 }}>{icon}</span>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: DARK, flex: 1 }}>{displayName}</span>
-                              <span style={{ fontSize: 12, fontWeight: 700, color: TEAL }}>{fmtEur(boatRev(boat))}</span>
-                            </Row>
-                            <CapBar boat={boat} />
-                            {!isAdding && (
-                              <button onClick={() => { setEditing(null); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); }}
-                                style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, background: "#EBF7FA", border: `1.5px dashed ${TEAL}60`, color: TEAL, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
-                                + Ajouter
-                              </button>
-                            )}
-                            {isAdding && (
-                              <BookingForm title="+ Nouvelle réservation" form={adding.form}
-                                set={f => setAdding(a => ({ ...a, form: f(a.form) }))}
-                                onSave={saveAdd} onCancel={() => setAdding(null)} admin />
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* All reservations for the day */}
-                    <div style={{ padding: "4px 0" }}>
-                      {allBookings.length === 0 && (
-                        <div style={{ padding: "16px", textAlign: "center", color: "#bbb", fontSize: 13 }}>Aucune réservation pour cette date.</div>
-                      )}
-                      {allBookings.map((bk, idx) => {
-                        const isEd = editing?.boatId === bk.boat.id && editing?.bkId === bk.id;
-                        const boatIcon = bk.boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-                        const boatName = bk.boat.name === "Aloes Vera" ? "Aloès Vera" : bk.boat.name;
-                        const srcColor = SOURCES[bk.source]?.color || "#999";
-                        const srcLabel = SOURCES[bk.source]?.label || "?";
-                        const isWoo = bk.source === "woo";
-
-                        if (isEd) return (
-                          <div key={bk.id} style={{ padding: "0 16px 12px" }}>
-                            <BookingForm title="✏️ Modifier la réservation" form={editing.form}
-                              set={f => setEditing(e => ({ ...e, form: f(e.form) }))}
-                              onSave={saveEdit} onCancel={() => setEditing(null)} admin />
-                          </div>
-                        );
-
-                        return (
-                          <div key={bk.id}>
-                            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12, padding: "12px 16px", borderBottom: idx < allBookings.length-1 ? "1px solid #f5f8fa" : "none", alignItems: "start" }}>
-                              
-                              {/* Left: source badge + boat */}
-                              <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
-                                <span style={{ background: srcColor, color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 10, fontWeight: 700, whiteSpace: "nowrap" }}>
-                                  {isWoo ? "🌐 Web" : srcLabel}
-                                </span>
-                                <span style={{ fontSize: 11, color: "#aaa" }}>{boatIcon} {boatName}</span>
-                              </div>
-
-                              {/* Center: client info */}
-                              <div style={{ fontSize: 13 }}>
-                                <div style={{ fontWeight: 700, color: DARK, marginBottom: 3 }}>{bk.name}</div>
-                                <Row gap={12} style={{ flexWrap: "wrap" }}>
-                                  <span style={{ color: "#666" }}>
-                                    👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
-                                  </span>
-                                  {bk.phone && <span style={{ color: "#999" }}>📞 {bk.phone}</span>}
-                                </Row>
-                                {bk.notes && (
-                                  <div style={{ marginTop: 4, fontSize: 12, color: "#888", fontStyle: "italic", background: "#FAFBFC", borderRadius: 6, padding: "4px 8px", border: "1px solid #eee" }}>
-                                    📝 {bk.notes}
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Right: price + actions */}
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
-                                <span style={{ fontWeight: 800, fontSize: 14, color: bk.price === 0 ? ORANGE : TEAL }}>
-                                  {bk.price === 0 ? "Offert" : fmtEur(bk.price)}
-                                </span>
-                                <Row gap={4}>
-                                  <button onClick={() => { setAdding(null); setEditing({ dateId: entry.id, boatId: bk.boat.id, bkId: bk.id, form: { ...bk } }); }}
-                                    style={{ background: "#EBF7FA", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 12, color: TEAL, fontWeight: 600 }}>✏️</button>
-                                  <button onClick={() => setDelBk(bk.id)}
-                                    style={{ background: "#FEF0EB", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 12, color: CORAL, fontWeight: 600 }}>🗑</button>
-                                </Row>
-                              </div>
-                            </div>
-
-                            {delBk === bk.id && (
-                              <Row gap={6} style={{ padding: "4px 16px 10px", background: "#FEF8F6" }}>
-                                <span style={{ fontSize: 12, color: CORAL, flex: 1 }}>Supprimer cette réservation ?</span>
-                                <Btn small variant="danger" onClick={() => doDelBk(entry.id, bk.boat.id, bk.id)}>Confirmer</Btn>
-                                <Btn small variant="ghost" onClick={() => setDelBk(null)}>Annuler</Btn>
-                              </Row>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          <div style={{ marginTop: 6 }}>
-            {addDate
-              ? <div style={{ background: "#fff", borderRadius: 12, padding: 16, border: `1.5px dashed ${TEAL}60` }}>
-                  <div style={{ fontWeight: 700, color: TEAL, marginBottom: 10 }}>+ Nouvelle date</div>
-                  <FInput value={newLabel} onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && saveNewDate()} placeholder="ex: Mercredi 29/05" />
-                  <Row gap={8} style={{ marginTop: 10 }}><Btn onClick={saveNewDate}>Créer</Btn><Btn variant="ghost" onClick={() => { setAddDate(false); setNewLabel(""); }}>Annuler</Btn></Row>
-                </div>
-              : <button onClick={() => setAddDate(true)} style={{ width: "100%", padding: 12, borderRadius: 12, background: "transparent", border: `1.5px dashed ${TEAL}60`, color: TEAL, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>+ Nouvelle date</button>
-            }
-          </div>
         </>)}
 
         {/* ── Pending tab ── */}
