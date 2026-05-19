@@ -16,7 +16,7 @@ const DAYS_SHORT = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
 const DAYS_LONG  = ["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
 const MONTHS     = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
 
-const SOURCES = {
+const DEFAULT_SOURCES = {
   luc:   { label:"Luc",   color:"#1A5F7A" },
   lud:   { label:"Lud",   color:"#2471A3" },
   cdi:   { label:"CDI",   color:"#C0392B" },
@@ -25,6 +25,9 @@ const SOURCES = {
   woo:   { label:"Web",   color:"#8E44AD" },
   autre: { label:"Autre", color:"#7F8C8D" },
 };
+
+// SOURCES is a module-level variable, updated by useData hook
+let SOURCES = { ...DEFAULT_SOURCES };
 
 // ── Utils ──────────────────────────────────────────────────────
 const uid      = () => Math.random().toString(36).slice(2, 9);
@@ -111,12 +114,21 @@ function parseWA(text) {
 // ── Shared storage hook ────────────────────────────────────────
 function useData() {
   const [data,    setData]    = useState({ dates: [], pending: [] });
+  const [sources, setSources] = useState({ ...DEFAULT_SOURCES });
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
       const r = await window.storage.get(STORE_KEY, true);
       if (r) setData(JSON.parse(r.value));
+    } catch {}
+    try {
+      const rs = await window.storage.get(STORE_KEY + "-sources", true);
+      if (rs) {
+        const parsed = JSON.parse(rs.value);
+        setSources(parsed);
+        SOURCES = parsed; // update module-level variable
+      }
     } catch {}
     setLoading(false);
   }, []);
@@ -128,7 +140,13 @@ function useData() {
     try { await window.storage.set(STORE_KEY, JSON.stringify(next), true); } catch {}
   };
 
-  return { data, save, loading, reload: load };
+  const saveSources = async (next) => {
+    setSources(next);
+    SOURCES = next; // update module-level variable
+    try { await window.storage.set(STORE_KEY + "-sources", JSON.stringify(next), true); } catch {}
+  };
+
+  return { data, save, sources, saveSources, loading, reload: load };
 }
 
 // ── Small UI pieces ────────────────────────────────────────────
@@ -702,9 +720,163 @@ function ResellerPortal({ data, save }) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// REVENDEURS TAB COMPONENT
+// ════════════════════════════════════════════════════════════════
+const PALETTE = ["#1A5F7A","#2471A3","#C0392B","#1E8449","#7D3C98","#8E44AD","#E67E22","#16A085","#2C3E50","#27AE60","#D35400","#7F8C8D"];
+
+function RevendeursTab({ sources, saveSources }) {
+  const [editing, setEditing] = useState(null);
+  const [form,    setForm]    = useState({ label: "", color: PALETTE[0] });
+  const [adding,  setAdding]  = useState(false);
+  const [newForm, setNewForm] = useState({ label: "", color: PALETTE[0] });
+  const [delKey,  setDelKey]  = useState(null);
+  const [notif,   setNotif]   = useState(null);
+
+  const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
+  const FIXED = ["woo","autre"];
+
+  const startEdit = (key) => { setEditing(key); setForm({ label: sources[key].label, color: sources[key].color }); };
+
+  const saveEdit = () => {
+    if (!form.label.trim()) return;
+    saveSources({ ...sources, [editing]: { label: form.label.trim(), color: form.color } });
+    setEditing(null); toast("Référent(e) modifié(e) ✓");
+  };
+
+  const saveAdd = () => {
+    if (!newForm.label.trim()) return;
+    const key = newForm.label.trim().toLowerCase().replace(/[^a-z0-9]/g,"_") + "_" + uid();
+    saveSources({ ...sources, [key]: { label: newForm.label.trim(), color: newForm.color } });
+    setAdding(false); setNewForm({ label:"", color:PALETTE[0] }); toast("Référent(e) ajouté(e) ✓");
+  };
+
+  const doDelete = (key) => {
+    const next = { ...sources }; delete next[key];
+    saveSources(next); setDelKey(null); toast("Référent(e) supprimé(e)");
+  };
+
+  const ColorPicker = ({ value, onChange }) => (
+    <div style={{ display:"flex", gap:8, flexWrap:"wrap", marginTop:6 }}>
+      {PALETTE.map(c => (
+        <button key={c} onClick={()=>onChange(c)}
+          style={{ width:30, height:30, borderRadius:15, background:c, border: value===c ? "3px solid #fff" : "3px solid transparent", outline: value===c ? `2px solid ${c}` : "none", cursor:"pointer" }} />
+      ))}
+    </div>
+  );
+
+  const editableSources = Object.entries(sources).filter(([k])=>!FIXED.includes(k));
+  const fixedSources    = Object.entries(sources).filter(([k])=> FIXED.includes(k));
+  const previewLabel    = (lbl, color) => (
+    <span style={{ background:color, color:"#fff", padding:"2px 12px", borderRadius:10, fontWeight:700, fontSize:12 }}>{lbl||"Aperçu"}</span>
+  );
+
+  return (
+    <div>
+      <div style={{ background:"#fff", borderRadius:14, padding:"18px 20px", border:"1px solid #deeaf0", marginBottom:12 }}>
+        <Row style={{ marginBottom:18 }}>
+          <h2 style={{ margin:0, color:TEAL, fontSize:18 }}>👥 Gestion des Référent(e)s</h2>
+          <div style={{ marginLeft:"auto" }}>
+            <Btn onClick={()=>{ setAdding(true); setEditing(null); }}>+ Ajouter</Btn>
+          </div>
+        </Row>
+
+        {/* Add form */}
+        {adding && (
+          <div style={{ background:"#F0F8FB", borderRadius:12, padding:16, marginBottom:16, border:`1px solid ${TEAL}30` }}>
+            <div style={{ fontWeight:700, color:TEAL, marginBottom:14 }}>+ Nouveau(elle) référent(e)</div>
+            <div style={{ marginBottom:12 }}>
+              <Label>Nom</Label>
+              <input value={newForm.label} onChange={e=>setNewForm(f=>({...f,label:e.target.value}))}
+                placeholder="ex: Marie, Agence ABC..."
+                style={{ width:"100%", padding:"9px 12px", border:"1px solid #ddd", borderRadius:8, fontSize:14, boxSizing:"border-box" }} />
+            </div>
+            <div style={{ marginBottom:14 }}>
+              <Label>Couleur du badge</Label>
+              <ColorPicker value={newForm.color} onChange={c=>setNewForm(f=>({...f,color:c}))} />
+            </div>
+            <Row gap={8}>
+              <Btn onClick={saveAdd} disabled={!newForm.label.trim()}>Enregistrer</Btn>
+              <Btn variant="ghost" onClick={()=>{ setAdding(false); setNewForm({label:"",color:PALETTE[0]}); }}>Annuler</Btn>
+              <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8, fontSize:13, color:"#666" }}>
+                Aperçu : {previewLabel(newForm.label, newForm.color)}
+              </div>
+            </Row>
+          </div>
+        )}
+
+        {/* Editable sources */}
+        <div style={{ marginBottom:8 }}>
+          {editableSources.length === 0 && !adding && (
+            <div style={{ textAlign:"center", padding:"20px", color:"#bbb", fontSize:13 }}>Aucun référent. Cliquez sur "+ Ajouter".</div>
+          )}
+          {editableSources.map(([key, src]) => {
+            const isEd  = editing === key;
+            const isDel = delKey === key;
+            return (
+              <div key={key} style={{ borderRadius:10, marginBottom:8, border:`1px solid ${isEd ? TEAL : "#e8eef3"}`, overflow:"hidden" }}>
+                {isEd ? (
+                  <div style={{ padding:14, background:"#F0F8FB" }}>
+                    <div style={{ marginBottom:12 }}>
+                      <Label>Nom</Label>
+                      <input value={form.label} onChange={e=>setForm(f=>({...f,label:e.target.value}))}
+                        style={{ width:"100%", padding:"9px 12px", border:"1px solid #ddd", borderRadius:8, fontSize:14, boxSizing:"border-box" }} />
+                    </div>
+                    <div style={{ marginBottom:14 }}>
+                      <Label>Couleur du badge</Label>
+                      <ColorPicker value={form.color} onChange={c=>setForm(f=>({...f,color:c}))} />
+                    </div>
+                    <Row gap={8}>
+                      <Btn small onClick={saveEdit} disabled={!form.label.trim()}>Enregistrer</Btn>
+                      <Btn small variant="ghost" onClick={()=>setEditing(null)}>Annuler</Btn>
+                      <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8, fontSize:12, color:"#666" }}>
+                        Aperçu : {previewLabel(form.label, form.color)}
+                      </div>
+                    </Row>
+                  </div>
+                ) : (
+                  <Row style={{ padding:"12px 14px", background:"#fff" }}>
+                    <span style={{ background:src.color, color:"#fff", fontSize:12, padding:"3px 14px", borderRadius:10, fontWeight:700, minWidth:50, textAlign:"center", flexShrink:0 }}>{src.label}</span>
+                    <div style={{ flex:1, paddingLeft:8, fontSize:12, color:"#aaa" }}>Identifiant : {key}</div>
+                    <Row gap={6}>
+                      <button onClick={()=>startEdit(key)}
+                        style={{ background:"#EBF7FA", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
+                      {isDel ? (
+                        <Row gap={4}>
+                          <Btn small variant="danger" onClick={()=>doDelete(key)}>Confirmer</Btn>
+                          <Btn small variant="ghost"  onClick={()=>setDelKey(null)}>✕</Btn>
+                        </Row>
+                      ) : (
+                        <button onClick={()=>setDelKey(key)}
+                          style={{ background:"#FEF0EB", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:CORAL, fontWeight:600 }}>🗑</button>
+                      )}
+                    </Row>
+                  </Row>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Fixed entries */}
+        <div style={{ borderTop:"1px solid #f0f5f7", paddingTop:12 }}>
+          <div style={{ fontSize:11, color:"#bbb", marginBottom:8, fontWeight:600, textTransform:"uppercase", letterSpacing:0.5 }}>Entrées système (non modifiables)</div>
+          <Row gap={8} style={{ flexWrap:"wrap" }}>
+            {fixedSources.map(([key,src])=>(
+              <span key={key} style={{ background:src.color, color:"#fff", fontSize:11, padding:"3px 12px", borderRadius:10, fontWeight:700 }}>{src.label}</span>
+            ))}
+          </Row>
+        </div>
+      </div>
+
+      {notif && <div style={{ position:"fixed", bottom:22, left:"50%", transform:"translateX(-50%)", background:notif.ok?TEAL:CORAL, color:"#fff", padding:"10px 24px", borderRadius:28, fontSize:14, fontWeight:600, zIndex:9999 }}>{notif.msg}</div>}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
 // STATS TAB COMPONENT
 // ════════════════════════════════════════════════════════════════
-function StatsTab({ data }) {
+function StatsTab({ data, sources: srcMap }) {
   const today      = new Date();
   const [period,   setPeriod]   = useState("month");  // jour | semaine | mois | année | tout
   const [source,   setSource]   = useState("all");    // all | luc | lud | cdi | cam | ici | woo | autre
@@ -805,8 +977,9 @@ function StatsTab({ data }) {
     a.click(); URL.revokeObjectURL(url);
   };
 
-  const srcColor  = (src) => SOURCES[src]?.color || "#999";
-  const srcLabel  = (src) => SOURCES[src]?.label || src || "?";
+  const S = srcMap || SOURCES;
+  const srcColor  = (src) => S[src]?.color || "#999";
+  const srcLabel  = (src) => S[src]?.label || src || "?";
 
   return (
     <div>
@@ -1584,7 +1757,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 // ════════════════════════════════════════════════════════════════
 // ADMIN VIEW
 // ════════════════════════════════════════════════════════════════
-function AdminView({ data, save, reload }) {
+function AdminView({ data, save, sources, saveSources, reload }) {
   const [tab,      setTab]      = useState("planning");
   const [exp,      setExp]      = useState({});
   const [editing,  setEditing]  = useState(null);
@@ -1649,7 +1822,7 @@ function AdminView({ data, save, reload }) {
         <span style={{ fontSize: 15, fontWeight: 700 }}>Panamax · Admin</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-            {[["planning", "📅 Planning"], ["pending", `⏳ Attente${pc ? ` (${pc})` : ""}`], ["stats", "📊 Stats"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
+            {[["planning", "📅 Planning"], ["pending", `⏳ Attente${pc ? ` (${pc})` : ""}`], ["stats", "📊 Stats"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
               <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: tab === v ? 700 : 400, whiteSpace: "nowrap" }}>{lbl}</button>
             ))}
             <button onClick={reload} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: "0 8px" }}>↻</button>
@@ -1712,7 +1885,10 @@ function AdminView({ data, save, reload }) {
         )}
 
         {/* ── Stats tab ── */}
-        {tab === "stats" && <StatsTab data={data} />}
+        {tab === "stats" && <StatsTab data={data} sources={sources} />}
+
+        {/* ── Revendeurs tab ── */}
+        {tab === "revendeurs" && <RevendeursTab sources={sources} saveSources={saveSources} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
@@ -1777,7 +1953,7 @@ function PinGate({ onUnlock }) {
 // ROOT
 // ════════════════════════════════════════════════════════════════
 export default function Root() {
-  const { data, save, loading, reload } = useData();
+  const { data, save, sources, saveSources, loading, reload } = useData();
   const [mode, setMode] = useState("reseller");
 
   if (loading) return (
@@ -1800,7 +1976,7 @@ export default function Root() {
         </div>
       )}
       {mode === "admin-gate" && <PinGate onUnlock={() => setMode("admin")} />}
-      {mode === "admin"      && <AdminView data={data} save={save} reload={reload} />}
+      {mode === "admin"      && <AdminView data={data} save={save} sources={sources} saveSources={saveSources} reload={reload} />}
 
       <div style={{ position: "fixed", bottom: 120, right: 14, zIndex: 200 }}>
         <button onClick={() => mode === "admin" ? setMode("reseller") : setMode("admin-gate")}
