@@ -9,8 +9,8 @@ export default async function handler(req, res) {
 
   // Utilise les variables d'environnement Vercel
   const siteUrl = process.env.WOO_SITE_URL;
-  const ck      = process.env.WOO_CONSUMER_KEY;
-  const cs      = process.env.WOO_CONSUMER_SECRET;
+  const ck      = process.env.CONSUMER_KEY;
+  const cs      = process.env.CONSUMER_SECRET;
 
   if (!siteUrl || !ck || !cs) {
     return res.status(500).json({ error: 'Variables d\'environnement manquantes sur Vercel' });
