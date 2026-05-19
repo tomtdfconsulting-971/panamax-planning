@@ -1010,76 +1010,142 @@ function AdminView({ data, save, reload }) {
           )}
 
           {data.dates.map(entry => {
-            const dp = entry.boats.reduce((s, b) => s + boatPax(b), 0);
-            const dr = entry.boats.reduce((s, b) => s + boatRev(b), 0);
+            const dp     = entry.boats.reduce((s, b) => s + boatPax(b), 0);
+            const dr     = entry.boats.reduce((s, b) => s + boatRev(b), 0);
             const isOpen = exp[entry.id];
+            // All bookings for the day across all boats
+            const allBookings = entry.boats.flatMap(boat => boat.bookings.map(bk => ({ ...bk, boat })));
+
             return (
-              <div key={entry.id} style={{ background: "#fff", borderRadius: 12, marginBottom: 10, overflow: "hidden", border: "1px solid #deeaf0" }}>
-                <Row style={{ padding: "13px 16px", cursor: "pointer", userSelect: "none" }} onClick={() => toggle(entry.id)}>
-                  <span>📅</span>
+              <div key={entry.id} style={{ background: "#fff", borderRadius: 14, marginBottom: 10, overflow: "hidden", border: "1px solid #deeaf0", boxShadow: "0 1px 6px rgba(26,95,122,0.07)" }}>
+
+                {/* ── Date header (always visible) ── */}
+                <Row style={{ padding: "13px 16px", cursor: "pointer", userSelect: "none", background: isOpen ? "#F0F8FB" : "#fff" }} onClick={() => toggle(entry.id)}>
+                  <span style={{ fontSize: 16 }}>📅</span>
                   <span style={{ fontSize: 15, fontWeight: 700, color: TEAL, flex: 1 }}>{entry.label}</span>
                   <Chip bg="#EBF7FA" color={TEAL}>{dp} pax</Chip>
                   <Chip bg="#FEF0EB" color={CORAL}>{fmtEur(dr)}</Chip>
-                  <button onClick={e => { e.stopPropagation(); copyWA(entry); }} style={{ background: copied === entry.id ? GREEN : "#fff", color: copied === entry.id ? "#fff" : "#555", border: "1px solid #ddd", borderRadius: 6, padding: "4px 11px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
+                  <button onClick={e => { e.stopPropagation(); copyWA(entry); }}
+                    style={{ background: copied === entry.id ? GREEN : "#fff", color: copied === entry.id ? "#fff" : "#555", border: "1px solid #ddd", borderRadius: 6, padding: "4px 11px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
                     {copied === entry.id ? "✓ Copié !" : "📋 WhatsApp"}
                   </button>
                   {delDate === entry.id
                     ? <Row gap={5} onClick={e => e.stopPropagation()}><Btn small variant="danger" onClick={() => doDelDate(entry.id)}>Supprimer</Btn><Btn small variant="ghost" onClick={() => setDelDate(null)}>✕</Btn></Row>
                     : <button onClick={e => { e.stopPropagation(); setDelDate(entry.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ddd", fontSize: 16 }}>🗑</button>
                   }
-                  <span style={{ color: "#bbb", fontSize: 11 }}>{isOpen ? "▲" : "▼"}</span>
+                  <span style={{ color: "#bbb", fontSize: 13, marginLeft: 4 }}>{isOpen ? "▲" : "▼"}</span>
                 </Row>
 
-                {isOpen && entry.boats.map(boat => {
-                  const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-                  const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
-                  const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
-                  return (
-                    <div key={boat.id} style={{ borderTop: "1px solid #f0f5f7", padding: "12px 16px 14px" }}>
-                      <Row style={{ marginBottom: 8 }}>
-                        <span style={{ fontSize: 18 }}>{icon}</span>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: DARK, flex: 1 }}>{displayName}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: TEAL }}>{fmtEur(boatRev(boat))}</span>
-                      </Row>
-                      <CapBar boat={boat} />
-                      <div style={{ marginTop: 10 }}>
-                        {boat.bookings.map(bk => {
-                          const isEd = editing?.boatId === boat.id && editing?.bkId === bk.id;
-                          if (isEd) return (
-                            <BookingForm key={bk.id} title="✏️ Modifier" form={editing.form} set={f => setEditing(e => ({ ...e, form: f(e.form) }))} onSave={saveEdit} onCancel={() => setEditing(null)} admin />
-                          );
-                          return (
-                            <div key={bk.id}>
-                              <Row style={{ padding: "8px 0", borderBottom: "1px solid #f0f5f7", fontSize: 13 }}>
-                                <span style={{ background: SOURCES[bk.source]?.color || "#999", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 8, fontWeight: 700, minWidth: 28, textAlign: "center", flexShrink: 0 }}>{SOURCES[bk.source]?.label || "?"}</span>
-                                <span style={{ fontWeight: 700, color: DARK, minWidth: 34, flexShrink: 0 }}>{bk.children ? `${bk.adults}+${bk.children}` : bk.adults}</span>
-                                <span style={{ flex: 1, color: DARK, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{bk.name}</span>
-                                {bk.phone && <span style={{ color: "#999", fontSize: 11, flexShrink: 0 }}>{bk.phone}</span>}
-                                {bk.notes && <span style={{ fontSize: 12, flexShrink: 0 }}>{bk.notes}</span>}
-                                <span style={{ fontWeight: 700, color: bk.price === 0 ? ORANGE : TEAL, minWidth: 44, textAlign: "right", flexShrink: 0 }}>{bk.price}€</span>
-                                <button onClick={() => { setAdding(null); setEditing({ dateId: entry.id, boatId: boat.id, bkId: bk.id, form: { ...bk } }); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ccc" }}>✏️</button>
-                                <button onClick={() => setDelBk(bk.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, color: "#ddd" }}>🗑</button>
-                              </Row>
-                              {delBk === bk.id && (
-                                <Row gap={6} style={{ padding: "4px 0 8px", marginLeft: 44 }}>
-                                  <Btn small variant="danger" onClick={() => doDelBk(entry.id, boat.id, bk.id)}>Confirmer</Btn>
-                                  <Btn small variant="ghost" onClick={() => setDelBk(null)}>Annuler</Btn>
-                                </Row>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {isAdding
-                        ? <BookingForm title="+ Nouvelle réservation" form={adding.form} set={f => setAdding(a => ({ ...a, form: f(a.form) }))} onSave={saveAdd} onCancel={() => setAdding(null)} admin />
-                        : <button onClick={() => { setEditing(null); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); }}
-                            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 13px", borderRadius: 7, background: "#EBF7FA", border: `1.5px dashed ${TEAL}70`, color: TEAL, cursor: "pointer", fontSize: 12, fontWeight: 600, marginTop: 10 }}>
-                            + Ajouter une réservation
-                          </button>
-                      }
+                {/* ── Dropdown content ── */}
+                {isOpen && (
+                  <div style={{ borderTop: "1px solid #e8f2f7" }}>
+
+                    {/* Boats capacity summary */}
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderBottom: "1px solid #f0f5f7" }}>
+                      {entry.boats.map(boat => {
+                        const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
+                        const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
+                        const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
+                        return (
+                          <div key={boat.id} style={{ padding: "10px 16px", borderRight: "1px solid #f0f5f7" }}>
+                            <Row style={{ marginBottom: 6 }}>
+                              <span style={{ fontSize: 16 }}>{icon}</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: DARK, flex: 1 }}>{displayName}</span>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: TEAL }}>{fmtEur(boatRev(boat))}</span>
+                            </Row>
+                            <CapBar boat={boat} />
+                            {!isAdding && (
+                              <button onClick={() => { setEditing(null); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); }}
+                                style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, background: "#EBF7FA", border: `1.5px dashed ${TEAL}60`, color: TEAL, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                                + Ajouter
+                              </button>
+                            )}
+                            {isAdding && (
+                              <BookingForm title="+ Nouvelle réservation" form={adding.form}
+                                set={f => setAdding(a => ({ ...a, form: f(a.form) }))}
+                                onSave={saveAdd} onCancel={() => setAdding(null)} admin />
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
+
+                    {/* All reservations for the day */}
+                    <div style={{ padding: "4px 0" }}>
+                      {allBookings.length === 0 && (
+                        <div style={{ padding: "16px", textAlign: "center", color: "#bbb", fontSize: 13 }}>Aucune réservation pour cette date.</div>
+                      )}
+                      {allBookings.map((bk, idx) => {
+                        const isEd = editing?.boatId === bk.boat.id && editing?.bkId === bk.id;
+                        const boatIcon = bk.boat.name === "Aloes Vera" ? "🛥️" : "🚤";
+                        const boatName = bk.boat.name === "Aloes Vera" ? "Aloès Vera" : bk.boat.name;
+                        const srcColor = SOURCES[bk.source]?.color || "#999";
+                        const srcLabel = SOURCES[bk.source]?.label || "?";
+                        const isWoo = bk.source === "woo";
+
+                        if (isEd) return (
+                          <div key={bk.id} style={{ padding: "0 16px 12px" }}>
+                            <BookingForm title="✏️ Modifier la réservation" form={editing.form}
+                              set={f => setEditing(e => ({ ...e, form: f(e.form) }))}
+                              onSave={saveEdit} onCancel={() => setEditing(null)} admin />
+                          </div>
+                        );
+
+                        return (
+                          <div key={bk.id}>
+                            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 12, padding: "12px 16px", borderBottom: idx < allBookings.length-1 ? "1px solid #f5f8fa" : "none", alignItems: "start" }}>
+                              
+                              {/* Left: source badge + boat */}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center" }}>
+                                <span style={{ background: srcColor, color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 10, fontWeight: 700, whiteSpace: "nowrap" }}>
+                                  {isWoo ? "🌐 Web" : srcLabel}
+                                </span>
+                                <span style={{ fontSize: 11, color: "#aaa" }}>{boatIcon} {boatName}</span>
+                              </div>
+
+                              {/* Center: client info */}
+                              <div style={{ fontSize: 13 }}>
+                                <div style={{ fontWeight: 700, color: DARK, marginBottom: 3 }}>{bk.name}</div>
+                                <Row gap={12} style={{ flexWrap: "wrap" }}>
+                                  <span style={{ color: "#666" }}>
+                                    👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
+                                  </span>
+                                  {bk.phone && <span style={{ color: "#999" }}>📞 {bk.phone}</span>}
+                                </Row>
+                                {bk.notes && (
+                                  <div style={{ marginTop: 4, fontSize: 12, color: "#888", fontStyle: "italic", background: "#FAFBFC", borderRadius: 6, padding: "4px 8px", border: "1px solid #eee" }}>
+                                    📝 {bk.notes}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Right: price + actions */}
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                                <span style={{ fontWeight: 800, fontSize: 14, color: bk.price === 0 ? ORANGE : TEAL }}>
+                                  {bk.price === 0 ? "Offert" : fmtEur(bk.price)}
+                                </span>
+                                <Row gap={4}>
+                                  <button onClick={() => { setAdding(null); setEditing({ dateId: entry.id, boatId: bk.boat.id, bkId: bk.id, form: { ...bk } }); }}
+                                    style={{ background: "#EBF7FA", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 12, color: TEAL, fontWeight: 600 }}>✏️</button>
+                                  <button onClick={() => setDelBk(bk.id)}
+                                    style={{ background: "#FEF0EB", border: "none", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 12, color: CORAL, fontWeight: 600 }}>🗑</button>
+                                </Row>
+                              </div>
+                            </div>
+
+                            {delBk === bk.id && (
+                              <Row gap={6} style={{ padding: "4px 16px 10px", background: "#FEF8F6" }}>
+                                <span style={{ fontSize: 12, color: CORAL, flex: 1 }}>Supprimer cette réservation ?</span>
+                                <Btn small variant="danger" onClick={() => doDelBk(entry.id, bk.boat.id, bk.id)}>Confirmer</Btn>
+                                <Btn small variant="ghost" onClick={() => setDelBk(null)}>Annuler</Btn>
+                              </Row>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
