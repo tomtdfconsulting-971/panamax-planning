@@ -922,8 +922,6 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const [year,     setYear]     = useState(today.getFullYear());
   const [month,    setMonth]    = useState(today.getMonth());
   const [selDay,   setSelDay]   = useState(null); // selected date entry
-  const [addDate,  setAddDate]  = useState(false);
-  const [newLabel, setNewLabel] = useState("");
   const [delDate,  setDelDate]  = useState(null);
 
   const prevMonth = () => { if (month === 0) { setYear(y => y-1); setMonth(11); } else setMonth(m => m-1); };
@@ -945,14 +943,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const cells = Array(startDow).fill(null);
   for (let d = 1; d <= lastDay.getDate(); d++) cells.push(new Date(year, month, d));
 
-  const saveNewDate = () => {
-    if (!newLabel.trim()) return;
-    const next = { ...data, dates: [...data.dates, { id: uid(), label: newLabel.trim(), boats: [
-      { id: uid(), name: "Aloes Vera", emoji: "ferry", bookings: [] },
-      { id: uid(), name: "Panamax",    emoji: "boat",  bookings: [] },
-    ]}]};
-    save(next); setNewLabel(""); setAddDate(false); notify("Date ajoutée ✓");
-  };
+
 
   const doDelDate = (id) => {
     save({ ...data, dates: data.dates.filter(d => d.id !== id) });
@@ -1131,15 +1122,28 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
           return (
             <button key={cell.toISOString()}
-              onClick={() => entry && setSelDay(entry.id)}
+              onClick={() => {
+                const e = entry || null;
+                if (e) { setSelDay(e.id); } else {
+                  // Auto-create the date entry
+                  const lbl = labelFromDate(cell);
+                  const newEntry = { id: uid(), label: lbl, boats: [
+                    { id: uid(), name: "Aloes Vera", emoji: "ferry", bookings: [] },
+                    { id: uid(), name: "Panamax",    emoji: "boat",  bookings: [] },
+                  ]};
+                  const next = { ...data, dates: [...data.dates, newEntry] };
+                  save(next);
+                  setSelDay(newEntry.id);
+                }
+              }}
               style={{
-                background: isToday ? TEAL : entry ? "#EBF7FA" : "#fff",
-                border: isToday ? `2px solid ${TEAL}` : entry ? `1.5px solid ${TEAL}40` : "1.5px solid #eee",
-                borderRadius: 10, padding: "8px 4px", cursor: entry ? "pointer" : "default",
+                background: isToday ? TEAL : entry ? "#EBF7FA" : "#F8FBFC",
+                border: isToday ? `2px solid ${TEAL}` : entry ? `1.5px solid ${TEAL}40` : "1.5px solid #e8eef3",
+                borderRadius: 10, padding: "8px 4px", cursor: "pointer",
                 minHeight: 70, display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
                 transition: "all 0.15s",
               }}>
-              <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: isToday ? "#fff" : entry ? DARK : "#ccc" }}>
+              <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: isToday ? "#fff" : entry ? DARK : "#aaa" }}>
                 {cell.getDate()}
               </span>
               {entry && (
@@ -1172,17 +1176,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         })}
       </div>
 
-      {/* Add date */}
-      {addDate
-        ? <div style={{ background: "#fff", borderRadius: 12, padding: 16, border: `1.5px dashed ${TEAL}60`, marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, color: TEAL, marginBottom: 10 }}>+ Nouvelle date</div>
-            <FInput value={newLabel} onChange={e => setNewLabel(e.target.value)} onKeyDown={e => e.key === "Enter" && saveNewDate()} placeholder="ex: Mercredi 29/05" />
-            <Row gap={8} style={{ marginTop: 10 }}><Btn onClick={saveNewDate}>Créer</Btn><Btn variant="ghost" onClick={() => { setAddDate(false); setNewLabel(""); }}>Annuler</Btn></Row>
-          </div>
-        : <button onClick={() => setAddDate(true)} style={{ width: "100%", padding: 12, borderRadius: 12, background: "transparent", border: `1.5px dashed ${TEAL}60`, color: TEAL, cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
-            + Nouvelle date
-          </button>
-      }
+
     </div>
   );
 }
@@ -1252,12 +1246,14 @@ function AdminView({ data, save, reload }) {
       {/* Header */}
       <div style={{ background: DARK, color: "#fff", padding: "0 10px", height: 56, display: "flex", alignItems: "center", gap: 8, position: "sticky", top: 0, zIndex: 100, overflowX: "auto" }}>
         <span style={{ fontSize: 22 }}>🐟</span>
-        <span style={{ fontSize: 17, fontWeight: 700 }}>Panamax · Admin</span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-          {[["planning", "📅 Planning"], ["pending", `⏳ Attente${pc ? ` (${pc})` : ""}`], ["woo", "🛒 WooCommerce"], ["import", "⬆️ Importer"]].map(([v, lbl]) => (
-            <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 14px", cursor: "pointer", fontSize: 13, fontWeight: tab === v ? 700 : 400 }}>{lbl}</button>
-          ))}
-          <button onClick={reload} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: "0 8px" }}>↻</button>
+        <span style={{ fontSize: 15, fontWeight: 700 }}>Panamax · Admin</span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
+          <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+            {[["planning", "📅 Planning"], ["pending", `⏳ Attente${pc ? ` (${pc})` : ""}`], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
+              <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: tab === v ? 700 : 400, whiteSpace: "nowrap" }}>{lbl}</button>
+            ))}
+            <button onClick={reload} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: "0 8px" }}>↻</button>
+          </div>
         </div>
       </div>
 
@@ -1405,8 +1401,10 @@ export default function Root() {
 
       <div style={{ position: "fixed", bottom: 120, right: 14, zIndex: 200 }}>
         <button onClick={() => mode === "admin" ? setMode("reseller") : setMode("admin-gate")}
-          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, opacity: 0.25, padding: 4, lineHeight: 1 }}
-          title="Admin">🐟</button>
+          style={{ background: mode === "admin" ? "rgba(13,61,82,0.85)" : "none", border: "none", cursor: "pointer", fontSize: mode === "admin" ? 13 : 16, opacity: mode === "admin" ? 0.9 : 0.25, padding: mode === "admin" ? "6px 12px" : 4, lineHeight: 1, borderRadius: 20, color: "#fff", fontWeight: 600 }}
+          title={mode === "admin" ? "Retour portail" : "Admin"}>
+          {mode === "admin" ? "← Portail" : "🐟"}
+        </button>
       </div>
     </div>
   );
