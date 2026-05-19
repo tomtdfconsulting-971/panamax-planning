@@ -759,15 +759,17 @@ function WooTab({ data, save, notify }) {
   const fetchOrders = async () => {
     setLoading(true); setError(null); setOrders(null); setPreview(null);
     try {
-      const creds = btoa(`${ck}:${cs}`);
-      const url = `${siteUrl.replace(/\/$/, "")}/wp-json/wc/v3/orders?per_page=50&status=completed,processing&orderby=date&order=desc`;
-      const res = await fetch(url, { headers: { Authorization: `Basic ${creds}` } });
-      if (!res.ok) throw new Error(`Erreur ${res.status} — vérifiez les clés API`);
+      // Appel via le proxy Vercel — pas de CORS, clés sécurisées côté serveur
+      const res = await fetch('/api/woo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `Erreur ${res.status}`);
+      }
       const raw = await res.json();
       setOrders(raw);
       setPreview(mapOrders(raw));
     } catch (e) {
-      setError(e.message || "Erreur de connexion. Vérifiez l'URL et les clés API.");
+      setError(e.message || "Erreur de connexion au proxy WooCommerce.");
     }
     setLoading(false);
   };
@@ -825,21 +827,17 @@ function WooTab({ data, save, notify }) {
 
       {/* API mode */}
       {mode === "api" && (
-        <div style={{ background: "#F8FBFC", borderRadius: 12, padding: 18, marginBottom: 20, border: "1px solid #e0eef3" }}>
-          <div style={{ fontWeight: 700, color: DARK, fontSize: 13, marginBottom: 14 }}>🔑 Clés API WooCommerce</div>
-          <Grid cols="1fr" gap={10} style={{ marginBottom: 10 }}>
-            <FInput label="URL du site" value={siteUrl} onChange={e => setSiteUrl(e.target.value)} placeholder="https://panamaxexcursions.com" />
-          </Grid>
-          <Grid cols="1fr 1fr" gap={10}>
-            <FInput label="Consumer Key (ck_...)" value={ck} onChange={e => setCk(e.target.value)} placeholder="ck_xxxxxxxxxxxx" />
-            <FInput label="Consumer Secret (cs_...)" value={cs} onChange={e => setCs(e.target.value)} placeholder="cs_xxxxxxxxxxxx" type="password" />
-          </Grid>
-          <p style={{ fontSize: 11, color: "#aaa", marginTop: 10, lineHeight: 1.6 }}>
-            WooCommerce → Réglages → Avancé → API REST → Créer une clé (lecture seule)
-          </p>
-          <div style={{ background: "#FFF8EE", border: `1px solid ${ORANGE}40`, borderRadius: 8, padding: "10px 14px", marginTop: 12, fontSize: 12, color: ORANGE, lineHeight: 1.6 }}>
-            ⚠️ <strong>Note :</strong> L'appel API direct fonctionne uniquement sur le site déployé (Vercel). Dans cet outil de prévisualisation, utilisez le mode <strong>Coller le JSON</strong>.
-          </div>
+        <div style={{ background: "#F0F8FB", borderRadius: 12, padding: 18, marginBottom: 20, border: `1px solid ${TEAL}20` }}>
+          <Row gap={10}>
+            <div style={{ fontSize: 28 }}>✅</div>
+            <div>
+              <div style={{ fontWeight: 700, color: TEAL, fontSize: 14, marginBottom: 4 }}>Connexion configurée</div>
+              <div style={{ fontSize: 12, color: "#666", lineHeight: 1.7 }}>
+                Les clés WooCommerce sont sécurisées sur Vercel.<br/>
+                Cliquez sur "Récupérer les commandes" pour synchroniser.
+              </div>
+            </div>
+          </Row>
         </div>
       )}
 
