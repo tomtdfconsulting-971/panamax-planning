@@ -862,7 +862,7 @@ function WooTab({ data, save, notify }) {
       )}
 
       <Row gap={10} style={{ marginBottom: 24 }}>
-        {mode === "api"  && <Btn onClick={fetchOrders} disabled={loading || !ck || !cs}>{loading ? "Chargement…" : "🔄 Récupérer les commandes"}</Btn>}
+        {mode === "api"  && <Btn onClick={fetchOrders} disabled={loading}>{loading ? "Chargement…" : "🔄 Récupérer les commandes"}</Btn>}
         {mode === "json" && <Btn onClick={() => { try { const raw = JSON.parse(jsonText); setOrders(raw); setPreview(mapOrders(raw)); setError(null); } catch { setError("JSON invalide — vérifiez le contenu collé."); } }} disabled={!jsonText.trim()}>🔍 Analyser le JSON</Btn>}
         {readyCount > 0 && <Btn variant="success" onClick={importReady}>✓ Importer {readyCount} commande(s)</Btn>}
       </Row>
