@@ -2,9 +2,8 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import { initializeApp } from 'firebase/app'
-import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore'
+import { getFirestore, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
 
-// Firebase config
 const firebaseConfig = {
   apiKey: "AIzaSyD5CN_OaYLUTY6wRreTbS7q76kiJigvBZk",
   authDomain: "panamax-planning.firebaseapp.com",
@@ -17,44 +16,42 @@ const firebaseConfig = {
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
-// Polyfill window.storage avec Firestore
+// Toutes les données dans la collection "panamax" (autorisée par les règles Firestore)
+const safeKey = (key) => key.replace(/[^a-zA-Z0-9_-]/g, '_');
+
 window.storage = {
-  get: async (key, shared) => {
+  get: async (key) => {
     try {
-      const col = shared ? 'shared' : 'private';
-      const ref = doc(db, col, key.replace(/[/]/g, '_'));
+      const ref = doc(db, 'panamax', safeKey(key));
       const snap = await getDoc(ref);
       if (!snap.exists()) return null;
-      return { key, value: snap.data().value, shared: !!shared };
+      return { key, value: snap.data().value, shared: true };
     } catch (e) {
-      console.error('storage.get error', e);
+      console.error('storage.get error:', e);
       return null;
     }
   },
-  set: async (key, value, shared) => {
+  set: async (key, value) => {
     try {
-      const col = shared ? 'shared' : 'private';
-      const ref = doc(db, col, key.replace(/[/]/g, '_'));
+      const ref = doc(db, 'panamax', safeKey(key));
       await setDoc(ref, { value, updatedAt: Date.now() });
-      return { key, value, shared: !!shared };
+      return { key, value, shared: true };
     } catch (e) {
-      console.error('storage.set error', e);
+      console.error('storage.set error:', e);
       return null;
     }
   },
-  delete: async (key, shared) => {
+  delete: async (key) => {
     try {
-      const { deleteDoc } = await import('firebase/firestore');
-      const col = shared ? 'shared' : 'private';
-      const ref = doc(db, col, key.replace(/[/]/g, '_'));
+      const ref = doc(db, 'panamax', safeKey(key));
       await deleteDoc(ref);
       return { key, deleted: true };
     } catch (e) {
       return null;
     }
   },
-  list: async (prefix, shared) => {
-    return { keys: [], prefix, shared: !!shared };
+  list: async (prefix) => {
+    return { keys: [], prefix };
   }
 };
 
