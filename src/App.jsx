@@ -709,11 +709,11 @@ function WooTab({ data, save, notify }) {
     for (const order of raw) {
       if (order.status !== "completed" && order.status !== "processing") continue;
 
-      const adults   = parseInt(meta(order, "Nombre Adultes") || meta(order, "nombre_adultes") || meta(order, "_billing_adults") || "1", 10);
-      const children = parseInt(meta(order, "Enfant de -12 ans") || meta(order, "enfant_de_-12_ans") || meta(order, "enfants") || "0", 10);
-      const date1str = meta(order, "Date privilégiée") || meta(order, "date_privilegiee") || meta(order, "_preferred_date");
-      const date2str = meta(order, "Seconde date possible") || meta(order, "seconde_date") || meta(order, "_second_date");
-      const infoComp = meta(order, "Informations complémentaires") || meta(order, "informations_complementaires") || meta(order, "message") || "";
+      const adults   = parseInt(meta(order, "adult_number") || meta(order, "Nombre Adultes") || meta(order, "nombre_adultes") || "1", 10);
+      const children = parseInt(meta(order, "child_number") || meta(order, "Enfant de -12 ans") || meta(order, "enfant_de_-12_ans") || "0", 10);
+      const date1str = meta(order, "date_1") || meta(order, "Date privilégiée") || meta(order, "date_privilegiee");
+      const date2str = meta(order, "date_2") || meta(order, "Seconde date possible") || meta(order, "seconde_date");
+      const infoComp = meta(order, "additional_informations") || meta(order, "Informations complémentaires") || meta(order, "informations_complementaires") || order.customer_note || "";
       const label1   = wooDateToLabel(date1str);
       const label2   = wooDateToLabel(date2str);
       const name     = `${order.billing?.first_name || ""} ${order.billing?.last_name || ""}`.trim() || "Client web";
