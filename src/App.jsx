@@ -923,6 +923,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const [month,    setMonth]    = useState(today.getMonth());
   const [selDay,   setSelDay]   = useState(null); // selected date entry
   const [delDate,  setDelDate]  = useState(null);
+  const [adminStep, setAdminStep] = useState("day"); // "day" | "add-form" | "edit-form"
+  const [addBoat,   setAddBoat]   = useState(null);  // boat selected for add
 
   const prevMonth = () => { if (month === 0) { setYear(y => y-1); setMonth(11); } else setMonth(m => m-1); };
   const nextMonth = () => { if (month === 11) { setYear(y => y+1); setMonth(0); } else setMonth(m => m+1); };
@@ -950,6 +952,132 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
     setDelDate(null); setSelDay(null); notify("Date supprimée");
   };
 
+  // ── Add reservation full page ──────────────
+  if (adminStep === "add-form" && adding && addBoat) {
+    const entry = data.dates.find(d => d.id === adding.dateId);
+    const boatIcon = addBoat.name === "Aloes Vera" ? "🛥️" : "🚤";
+    const boatName = addBoat.name === "Aloes Vera" ? "Aloès Vera" : addBoat.name;
+    return (
+      <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #deeaf0" }}>
+        <button onClick={() => { setAdminStep("day"); setAdding(null); setAddBoat(null); }}
+          style={{ background: "#EBF7FA", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", color: TEAL, fontWeight: 700, fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+          ← Retour
+        </button>
+        <div style={{ background: "#F0F8FB", borderRadius: 12, padding: "12px 16px", marginBottom: 22, border: `1px solid ${TEAL}20` }}>
+          <Row style={{ flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontWeight: 800, color: TEAL }}>📅 {entry?.label}</span>
+            <span style={{ color: "#ccc" }}>·</span>
+            <span style={{ fontWeight: 700, color: DARK }}>{boatIcon} {boatName}</span>
+            <span style={{ marginLeft: "auto", fontWeight: 700, color: GREEN, fontSize: 12, background: "#E8F8F1", padding: "3px 10px", borderRadius: 8 }}>{spots(addBoat)} place(s)</span>
+          </Row>
+        </div>
+        <h3 style={{ margin: "0 0 20px", color: DARK }}>+ Nouvelle réservation</h3>
+        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+          <FInput label={`Adultes — ${P_AD}€/pers.`} type="number" min="0" value={adding.form.adults}
+            onChange={e => { const v = Math.max(0,+e.target.value); setAdding(a => ({ ...a, form: { ...a.form, adults: v, price: v*P_AD+a.form.children*P_CH } })); }} />
+          <FInput label={`Enfants — ${P_CH}€/pers.`} type="number" min="0" value={adding.form.children}
+            onChange={e => { const v = Math.max(0,+e.target.value); setAdding(a => ({ ...a, form: { ...a.form, children: v, price: a.form.adults*P_AD+v*P_CH } })); }} />
+        </Grid>
+        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+          <FSelect label="Canal de vente" value={adding.form.source} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, source: e.target.value } }))}>
+            {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+          </FSelect>
+          <FInput label="Téléphone" value={adding.form.phone} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, phone: e.target.value } }))} placeholder="+33..." />
+        </Grid>
+        <div style={{ marginBottom: 14 }}>
+          <FInput label="Nom du client" value={adding.form.name} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <Label>Notes (optionnel)</Label>
+          <textarea value={adding.form.notes} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, notes: e.target.value } }))}
+            placeholder="🎂 Anniversaire, ♿ handicap, remise..."
+            style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <Label>Prix €</Label>
+          <Row gap={8}>
+            <input type="number" style={{ ...inputStyle, flex: 1 }} value={adding.form.price}
+              onChange={e => setAdding(a => ({ ...a, form: { ...a.form, price: Math.max(0,+e.target.value) } }))} />
+            <button onClick={() => setAdding(a => ({ ...a, form: { ...a.form, price: a.form.adults*P_AD+a.form.children*P_CH } }))}
+              style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", cursor: "pointer", fontSize: 12, fontWeight: 700, height: 38, flexShrink: 0 }}>Auto</button>
+          </Row>
+        </div>
+        <div style={{ background: "#EBF7FA", borderRadius: 12, padding: "14px 18px", marginBottom: 22, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 11, color: "#6aadcc", fontWeight: 600 }}>TOTAL</div>
+          <span style={{ fontSize: 26, fontWeight: 800, color: TEAL }}>{fmtEur(adding.form.adults*P_AD+adding.form.children*P_CH)}</span>
+        </div>
+        <button onClick={() => { saveAdd(); setAdminStep("day"); setAddBoat(null); }}
+          disabled={!adding.form.name.trim() || adding.form.adults+adding.form.children === 0}
+          style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!adding.form.name.trim()||adding.form.adults+adding.form.children===0) ? 0.4 : 1 }}>
+          Enregistrer la réservation ✓
+        </button>
+      </div>
+    );
+  }
+
+  // ── Edit reservation full page ───────────────
+  if (adminStep === "edit-form" && editing) {
+    const entry = data.dates.find(d => d.id === editing.dateId);
+    const boat  = entry?.boats.find(b => b.id === editing.boatId);
+    const boatIcon = boat?.name === "Aloes Vera" ? "🛥️" : "🚤";
+    const boatName = boat?.name === "Aloes Vera" ? "Aloès Vera" : boat?.name;
+    return (
+      <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #deeaf0" }}>
+        <button onClick={() => { setAdminStep("day"); setEditing(null); }}
+          style={{ background: "#EBF7FA", border: "none", borderRadius: 8, padding: "7px 16px", cursor: "pointer", color: TEAL, fontWeight: 700, fontSize: 13, marginBottom: 20, display: "flex", alignItems: "center", gap: 6 }}>
+          ← Retour
+        </button>
+        <div style={{ background: "#F0F8FB", borderRadius: 12, padding: "12px 16px", marginBottom: 22, border: `1px solid ${TEAL}20` }}>
+          <Row style={{ flexWrap: "wrap", gap: 8 }}>
+            <span style={{ fontWeight: 800, color: TEAL }}>📅 {entry?.label}</span>
+            <span style={{ color: "#ccc" }}>·</span>
+            <span style={{ fontWeight: 700, color: DARK }}>{boatIcon} {boatName}</span>
+          </Row>
+        </div>
+        <h3 style={{ margin: "0 0 20px", color: DARK }}>✏️ Modifier la réservation</h3>
+        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+          <FInput label={`Adultes — ${P_AD}€/pers.`} type="number" min="0" value={editing.form.adults}
+            onChange={e => { const v=Math.max(0,+e.target.value); setEditing(ed => ({ ...ed, form: { ...ed.form, adults: v, price: v*P_AD+ed.form.children*P_CH } })); }} />
+          <FInput label={`Enfants — ${P_CH}€/pers.`} type="number" min="0" value={editing.form.children}
+            onChange={e => { const v=Math.max(0,+e.target.value); setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: ed.form.adults*P_AD+v*P_CH } })); }} />
+        </Grid>
+        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+          <FSelect label="Canal de vente" value={editing.form.source} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, source: e.target.value } }))}>
+            {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+          </FSelect>
+          <FInput label="Téléphone" value={editing.form.phone} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, phone: e.target.value } }))} placeholder="+33..." />
+        </Grid>
+        <div style={{ marginBottom: 14 }}>
+          <FInput label="Nom du client" value={editing.form.name} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <Label>Notes (optionnel)</Label>
+          <textarea value={editing.form.notes||""} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, notes: e.target.value } }))}
+            placeholder="🎂 Anniversaire, ♿ handicap, remise..."
+            style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <Label>Prix €</Label>
+          <Row gap={8}>
+            <input type="number" style={{ ...inputStyle, flex: 1 }} value={editing.form.price}
+              onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, price: Math.max(0,+e.target.value) } }))} />
+            <button onClick={() => setEditing(ed => ({ ...ed, form: { ...ed.form, price: ed.form.adults*P_AD+ed.form.children*P_CH } }))}
+              style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", cursor: "pointer", fontSize: 12, fontWeight: 700, height: 38, flexShrink: 0 }}>Auto</button>
+          </Row>
+        </div>
+        <div style={{ background: "#EBF7FA", borderRadius: 12, padding: "14px 18px", marginBottom: 22, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div style={{ fontSize: 11, color: "#6aadcc", fontWeight: 600 }}>TOTAL</div>
+          <span style={{ fontSize: 26, fontWeight: 800, color: TEAL }}>{fmtEur(editing.form.adults*P_AD+editing.form.children*P_CH)}</span>
+        </div>
+        <button onClick={() => { saveEdit(); setAdminStep("day"); }}
+          disabled={!editing.form.name.trim() || editing.form.adults+editing.form.children === 0}
+          style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!editing.form.name.trim()||editing.form.adults+editing.form.children===0) ? 0.4 : 1 }}>
+          Enregistrer les modifications ✓
+        </button>
+      </div>
+    );
+  }
+
   // Selected day detail view
   if (selDay) {
     const entry = data.dates.find(d => d.id === selDay) || null;
@@ -963,7 +1091,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         {/* Day detail header */}
         <div style={{ background: "#fff", borderRadius: 14, padding: "16px 20px", marginBottom: 12, border: "1px solid #deeaf0" }}>
           <Row style={{ marginBottom: 12 }}>
-            <button onClick={() => { setSelDay(null); setEditing(null); setAdding(null); setDelBk(null); }}
+            <button onClick={() => { setSelDay(null); setEditing(null); setAdding(null); setDelBk(null); setAdminStep("day"); setAddBoat(null); }}
               style={{ background: "#EBF7FA", border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", color: TEAL, fontWeight: 700, fontSize: 13 }}>
               ← Calendrier
             </button>
@@ -997,17 +1125,10 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   <span style={{ fontWeight: 700, color: TEAL, fontSize: 13 }}>{fmtEur(boatRev(boat))}</span>
                 </Row>
                 <CapBar boat={boat} />
-                {!isAdding && (
-                  <button onClick={() => { setEditing(null); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); }}
-                    style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 7, background: "#EBF7FA", border: `1.5px dashed ${TEAL}60`, color: TEAL, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-                    + Ajouter une réservation
-                  </button>
-                )}
-                {isAdding && (
-                  <BookingForm title="+ Nouvelle réservation" form={adding.form}
-                    set={f => setAdding(a => ({ ...a, form: f(a.form) }))}
-                    onSave={saveAdd} onCancel={() => setAdding(null)} admin />
-                )}
+                <button onClick={() => { setAddBoat(boat); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); setAdminStep("add-form"); }}
+                  style={{ marginTop: 10, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: TEAL, border: "none", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                  + Ajouter une réservation
+                </button>
               </div>
             );
           })}
@@ -1031,13 +1152,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             const srcLabel = SOURCES[bk.source]?.label || "?";
             const isWoo    = bk.source === "woo";
 
-            if (isEd) return (
-              <div key={bk.id} style={{ padding: "0 16px 12px", borderBottom: "1px solid #f0f5f7" }}>
-                <BookingForm title="✏️ Modifier la réservation" form={editing.form}
-                  set={f => setEditing(e => ({ ...e, form: f(e.form) }))}
-                  onSave={saveEdit} onCancel={() => setEditing(null)} admin />
-              </div>
-            );
+
 
             return (
               <div key={bk.id} style={{ borderBottom: idx < allBookings.length-1 ? "1px solid #f5f8fa" : "none" }}>
@@ -1073,7 +1188,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                       {bk.price === 0 ? "Offert" : fmtEur(bk.price)}
                     </span>
                     <Row gap={6}>
-                      <button onClick={() => { setAdding(null); setEditing({ dateId: entry.id, boatId: bk.boat.id, bkId: bk.id, form: { ...bk } }); }}
+                      <button onClick={() => { setEditing({ dateId: entry.id, boatId: bk.boat.id, bkId: bk.id, form: { ...bk } }); setAdminStep("edit-form"); }}
                         style={{ background: "#EBF7FA", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: TEAL, fontWeight: 600 }}>✏️ Modifier</button>
                       <button onClick={() => setDelBk(bk.id)}
                         style={{ background: "#FEF0EB", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: CORAL, fontWeight: 600 }}>🗑</button>
@@ -1123,6 +1238,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           return (
             <button key={cell.toISOString()}
               onClick={() => {
+                setAdminStep("day"); setEditing(null); setAdding(null); setAddBoat(null);
                 const e = entry || null;
                 if (e) { setSelDay(e.id); } else {
                   // Auto-create the date entry
