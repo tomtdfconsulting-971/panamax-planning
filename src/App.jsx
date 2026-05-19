@@ -639,7 +639,7 @@ function ResellerPortal({ data, save }) {
                   return (
                     <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 5, padding: "3px 5px" }}>
                       <Row style={{ justifyContent: "space-between", marginBottom: 2 }}>
-                        <span style={{ fontSize: 7, color: "rgba(255,255,255,0.65)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{boat.name === "Aloes Vera" ? "Aloès" : "Panamax"}</span>
+                        <span style={{ fontSize: 10 }}>{boat.name === "Aloes Vera" ? "🛥️" : "🚤"}</span>
                         <span style={{ fontSize: 9, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>{r <= 0 ? "🚫" : `${r}p`}</span>
                       </Row>
                       <div style={{ height: 3, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
@@ -1156,7 +1156,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                       <div key={boat.id} style={{ padding: "2px 4px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
                           <span style={{ fontSize: 7, color: isToday ? "rgba(255,255,255,0.7)" : "#888" }}>
-                            {boat.name === "Aloes Vera" ? "Aloès" : "Panamax"}
+                            {boat.name === "Aloes Vera" ? "🛥️" : "🚤"}
                           </span>
                           <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>
                             {r <= 0 ? "🚫" : `${r}p`}
