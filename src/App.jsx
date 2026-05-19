@@ -683,19 +683,18 @@ function ResellerPortal({ data, save }) {
               <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: "#fff" }}>{cell.getDate()}</span>
 
               {/* Both boats, every day */}
-              <div style={{ width: "calc(100% - 4px)", display: "flex", flexDirection: "column", gap: 3 }}>
+              <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden", boxSizing: "border-box", padding: "0 2px" }}>
                 {entry.boats.map(boat => {
                   const r  = spots(boat);
                   const p  = pct(boat);
                   const bc = barColor(boat);
-                  const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
                   return (
-                    <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 5, padding: "3px 5px" }}>
-                      <Row style={{ justifyContent: "space-between", marginBottom: 2 }}>
-                        <span style={{ fontSize: 10 }}>{boat.name === "Aloes Vera" ? "🛥️" : "🚤"}</span>
-                        <span style={{ fontSize: 9, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>{r <= 0 ? "🚫" : `${r}p`}</span>
-                      </Row>
-                      <div style={{ height: 3, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
+                    <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 4, padding: "2px 4px", overflow: "hidden", minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2, minWidth: 0 }}>
+                        <span style={{ fontSize: 9, lineHeight: 1, flexShrink: 0 }}>{boat.name === "Aloes Vera" ? "🛥️" : "🚤"}</span>
+                        <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A", flexShrink: 0, marginLeft: 1 }}>{r <= 0 ? "✕" : `${r}p`}</span>
+                      </div>
+                      <div style={{ height: 2, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${p}%`, background: bc, borderRadius: 2 }} />
                       </div>
                     </div>
