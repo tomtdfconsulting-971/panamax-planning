@@ -567,7 +567,7 @@ function ResellerPortal({ data, save }) {
 
   // ── Main calendar ──────────────────────────
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 14px 40px", maxWidth: 700, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 10px 40px", maxWidth: 700, margin: "0 auto", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
       {/* Top bar: mes réservations */}
       <Row style={{ justifyContent: "flex-end", padding: "12px 4px 0" }}>
         <button onClick={() => setStep("mes-resa")}
@@ -597,12 +597,12 @@ function ResellerPortal({ data, save }) {
       </Row>
 
       {/* Day headers */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 3 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 2, marginBottom: 2 }}>
         {DAYS_SHORT.map(d => <div key={d} style={{ textAlign: "center", fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", padding: "4px 0" }}>{d}</div>)}
       </div>
 
       {/* Calendar cells */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(7,minmax(0,1fr))", gap: 2 }}>
         {cells.map((cell, i) => {
           if (!cell) return <div key={"e" + i} />;
 
@@ -622,8 +622,9 @@ function ResellerPortal({ data, save }) {
                 borderRadius: 11,
                 padding: "5px 3px",
                 cursor: clickable ? "pointer" : "default",
-                minHeight: 76,
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+                minHeight: 70,
+                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                overflow: "hidden",
                 opacity: isPast ? 0.35 : 1,
               }}>
               <span style={{ fontSize: 13, fontWeight: isToday ? 800 : 500, color: "#fff" }}>{cell.getDate()}</span>
@@ -638,7 +639,7 @@ function ResellerPortal({ data, save }) {
                   return (
                     <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 5, padding: "3px 5px" }}>
                       <Row style={{ justifyContent: "space-between", marginBottom: 2 }}>
-                        <span style={{ fontSize: 8, color: "rgba(255,255,255,0.7)" }}>{boat.name === "Aloes Vera" ? "Aloès" : "Panamax"}</span>
+                        <span style={{ fontSize: 7, color: "rgba(255,255,255,0.65)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{boat.name === "Aloes Vera" ? "Aloès" : "Panamax"}</span>
                         <span style={{ fontSize: 9, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>{r <= 0 ? "🚫" : `${r}p`}</span>
                       </Row>
                       <div style={{ height: 3, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
@@ -1208,7 +1209,7 @@ export default function Root() {
   return (
     <div>
       {mode === "reseller" && (
-        <div style={{ minHeight: "100vh", background: `linear-gradient(160deg, ${DARK} 0%, ${TEAL} 55%, #2E86AB 100%)`, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
+        <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: `linear-gradient(160deg, ${DARK} 0%, ${TEAL} 55%, #2E86AB 100%)`, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "28px 24px 0", textAlign: "center" }}>
             <div style={{ color: "#fff", fontSize: 21, fontWeight: 800 }}>Panamax Excursions</div>
             <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginTop: 4 }}>Portail Commercial · Réservations en ligne</div>
