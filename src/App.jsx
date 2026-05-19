@@ -151,6 +151,26 @@ function Btn({ children, onClick, variant = "primary", small, disabled, full, st
 }
 
 const Label = ({ children }) => <label style={{ fontSize: 11, fontWeight: 600, color: "#555", display: "block", marginBottom: 3 }}>{children}</label>;
+
+const Counter = ({ label, value, onChange, min = 0, max = 12, sublabel }) => (
+  <div>
+    {label && <Label>{label}</Label>}
+    <div style={{ display: "flex", alignItems: "center", gap: 0, background: "#fff", border: "1px solid #ddd", borderRadius: 10, overflow: "hidden" }}>
+      <button onClick={() => onChange(Math.max(min, value - 1))}
+        style={{ width: 46, height: 46, background: value <= min ? "#f5f5f5" : "#EBF7FA", border: "none", cursor: value <= min ? "not-allowed" : "pointer", fontSize: 22, fontWeight: 700, color: value <= min ? "#ccc" : TEAL, flexShrink: 0 }}>
+        −
+      </button>
+      <div style={{ flex: 1, textAlign: "center" }}>
+        <div style={{ fontSize: 22, fontWeight: 800, color: DARK }}>{value}</div>
+        {sublabel && <div style={{ fontSize: 10, color: "#aaa", marginTop: -2 }}>{sublabel}</div>}
+      </div>
+      <button onClick={() => onChange(Math.min(max, value + 1))}
+        style={{ width: 46, height: 46, background: value >= max ? "#f5f5f5" : "#EBF7FA", border: "none", cursor: value >= max ? "not-allowed" : "pointer", fontSize: 22, fontWeight: 700, color: value >= max ? "#ccc" : TEAL, flexShrink: 0 }}>
+        +
+      </button>
+    </div>
+  </div>
+);
 const inputStyle = { width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff" };
 
 const FInput  = ({ label, ...p }) => <div><Label>{label}</Label><input  style={inputStyle} {...p} /></div>;
@@ -173,7 +193,7 @@ const CapBar = ({ boat }) => {
 };
 
 // Booking form (used in admin and reseller)
-const BLANK = { adults: 2, children: 0, name: "", source: "luc", phone: "", price: P_AD * 2, notes: "" };
+const BLANK = { adults: 2, children: 0, name: "", source: "", phone: "", price: P_AD * 2, notes: "", acompte: null };
 
 function BookingForm({ form, set, onSave, onCancel, title, admin }) {
   const upd = (k, v) => set(f => ({ ...f, [k]: v }));
@@ -186,7 +206,8 @@ function BookingForm({ form, set, onSave, onCancel, title, admin }) {
         <FInput label="Enfants" type="number" min="0" value={form.children}
           onChange={e => { const v = Math.max(0, +e.target.value); upd("children", v); upd("price", form.adults * P_AD + v * P_CH); }} />
         <FSelect label="Source" value={form.source} onChange={e => upd("source", e.target.value)}>
-          {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+          ><option value="">— Sélectionner —</option>
+            {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </FSelect>
         {admin && (
           <div>
@@ -375,22 +396,23 @@ function ResellerPortal({ data, save }) {
             </Row>
           </div>
           <h3 style={{ margin: "0 0 18px", color: DARK }}>Votre réservation</h3>
-          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-            <FInput label={`Adultes — ${P_AD}€/pers.`} type="number" min="0" value={form.adults}
-              onChange={e => { const v = Math.max(0, +e.target.value); setForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH })); }} />
-            <FInput label={`Enfants — ${P_CH}€/pers.`} type="number" min="0" value={form.children}
-              onChange={e => { const v = Math.max(0, +e.target.value); setForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH })); }} />
+          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
+            <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={form.adults}
+              onChange={v => setForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
+            <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={form.children}
+              onChange={v => setForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
           </Grid>
           <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-            <FSelect label="Canal de vente" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
-              {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            <FSelect label="Référent(e)" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
+              ><option value="">— Sélectionner —</option>
+            {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
             <FInput label="Téléphone client" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+33..." />
           </Grid>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
           </div>
-          <div style={{ marginBottom: 22 }}>
+          <div style={{ marginBottom: 16 }}>
             <Label>Notes (optionnel)</Label>
             <textarea
               value={form.notes}
@@ -398,6 +420,17 @@ function ResellerPortal({ data, save }) {
               placeholder="🎂 Anniversaire, ♿ handicap, remise, demande spéciale..."
               style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }}
             />
+          </div>
+          <div style={{ marginBottom: 22 }}>
+            <Label>Acompte encaissé ?</Label>
+            <div style={{ display: "flex", gap: 10 }}>
+              {[["oui", "✅ Oui"], ["non", "❌ Non"]].map(([val, lbl]) => (
+                <button key={val} onClick={() => setForm(f => ({ ...f, acompte: f.acompte === val ? null : val }))}
+                  style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#ddd"}`, background: form.acompte === val ? (val === "oui" ? "#E8F8F1" : "#FEF0EB") : "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, color: form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#888" }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
           </div>
           <div style={{ background: "#EBF7FA", borderRadius: 12, padding: "14px 18px", marginBottom: 22, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
@@ -484,6 +517,7 @@ function ResellerPortal({ data, save }) {
                   <div>👥 {p.children ? `${p.adults} adulte(s) + ${p.children} enfant(s)` : `${p.adults} adulte(s)`}</div>
                   {p.phone && <div>📞 {p.phone}</div>}
                   {p.notes && <div>📝 {p.notes}</div>}
+                  {p.acompte && <div style={{ fontWeight: 700, color: p.acompte === "oui" ? GREEN : CORAL }}>{p.acompte === "oui" ? "✅ Acompte encaissé" : "❌ Acompte non encaissé"}</div>}
                   <div style={{ color: TEAL, fontWeight: 700 }}>💰 {fmtEur(p.adults * P_AD + p.children * P_CH)}</div>
                 </div>
                 {isPendingDel ? (
@@ -529,15 +563,16 @@ function ResellerPortal({ data, save }) {
             </Row>
           </div>
           <h3 style={{ margin: "0 0 18px", color: DARK }}>✏️ Modifier la réservation</h3>
-          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-            <FInput label={`Adultes — ${P_AD}€/pers.`} type="number" min="0" value={editForm.adults}
-              onChange={e => { const v = Math.max(0, +e.target.value); setEditForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH })); }} />
-            <FInput label={`Enfants — ${P_CH}€/pers.`} type="number" min="0" value={editForm.children}
-              onChange={e => { const v = Math.max(0, +e.target.value); setEditForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH })); }} />
+          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
+            <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editForm.adults}
+              onChange={v => setEditForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
+            <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editForm.children}
+              onChange={v => setEditForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
           </Grid>
           <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-            <FSelect label="Canal de vente" value={editForm.source} onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}>
-              {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            <FSelect label="Référent(e)" value={editForm.source} onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}>
+              ><option value="">— Sélectionner —</option>
+            {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
             <FInput label="Téléphone client" value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+33..." />
           </Grid>
@@ -972,14 +1007,14 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           </Row>
         </div>
         <h3 style={{ margin: "0 0 20px", color: DARK }}>+ Nouvelle réservation</h3>
-        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-          <FInput label={`Adultes — ${P_AD}€/pers.`} type="number" min="0" value={adding.form.adults}
-            onChange={e => { const v = Math.max(0,+e.target.value); setAdding(a => ({ ...a, form: { ...a.form, adults: v, price: v*P_AD+a.form.children*P_CH } })); }} />
-          <FInput label={`Enfants — ${P_CH}€/pers.`} type="number" min="0" value={adding.form.children}
-            onChange={e => { const v = Math.max(0,+e.target.value); setAdding(a => ({ ...a, form: { ...a.form, children: v, price: a.form.adults*P_AD+v*P_CH } })); }} />
+        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
+          <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={adding.form.adults}
+            onChange={v => setAdding(a => ({ ...a, form: { ...a.form, adults: v, price: v*P_AD+a.form.children*P_CH } }))} />
+          <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={adding.form.children}
+            onChange={v => setAdding(a => ({ ...a, form: { ...a.form, children: v, price: a.form.adults*P_AD+v*P_CH } }))} />
         </Grid>
         <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-          <FSelect label="Canal de vente" value={adding.form.source} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, source: e.target.value } }))}>
+          <FSelect label="Référent(e)" value={adding.form.source} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </FSelect>
           <FInput label="Téléphone" value={adding.form.phone} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, phone: e.target.value } }))} placeholder="+33..." />
@@ -992,6 +1027,17 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <textarea value={adding.form.notes} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, notes: e.target.value } }))}
             placeholder="🎂 Anniversaire, ♿ handicap, remise..."
             style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <Label>Acompte encaissé ?</Label>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[["oui", "✅ Oui"], ["non", "❌ Non"]].map(([val, lbl]) => (
+              <button key={val} onClick={() => setAdding(a => ({ ...a, form: { ...a.form, acompte: a.form.acompte === val ? null : val } }))}
+                style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${adding.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#ddd"}`, background: adding.form.acompte === val ? (val === "oui" ? "#E8F8F1" : "#FEF0EB") : "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, color: adding.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#888" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ marginBottom: 16 }}>
           <Label>Prix €</Label>
@@ -1035,14 +1081,14 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           </Row>
         </div>
         <h3 style={{ margin: "0 0 20px", color: DARK }}>✏️ Modifier la réservation</h3>
-        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-          <FInput label={`Adultes — ${P_AD}€/pers.`} type="number" min="0" value={editing.form.adults}
-            onChange={e => { const v=Math.max(0,+e.target.value); setEditing(ed => ({ ...ed, form: { ...ed.form, adults: v, price: v*P_AD+ed.form.children*P_CH } })); }} />
-          <FInput label={`Enfants — ${P_CH}€/pers.`} type="number" min="0" value={editing.form.children}
-            onChange={e => { const v=Math.max(0,+e.target.value); setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: ed.form.adults*P_AD+v*P_CH } })); }} />
+        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
+          <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editing.form.adults}
+            onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, adults: v, price: v*P_AD+ed.form.children*P_CH } }))} />
+          <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editing.form.children}
+            onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: ed.form.adults*P_AD+v*P_CH } }))} />
         </Grid>
         <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
-          <FSelect label="Canal de vente" value={editing.form.source} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, source: e.target.value } }))}>
+          <FSelect label="Référent(e)" value={editing.form.source} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </FSelect>
           <FInput label="Téléphone" value={editing.form.phone} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, phone: e.target.value } }))} placeholder="+33..." />
@@ -1055,6 +1101,17 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <textarea value={editing.form.notes||""} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, notes: e.target.value } }))}
             placeholder="🎂 Anniversaire, ♿ handicap, remise..."
             style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <Label>Acompte encaissé ?</Label>
+          <div style={{ display: "flex", gap: 10 }}>
+            {[["oui", "✅ Oui"], ["non", "❌ Non"]].map(([val, lbl]) => (
+              <button key={val} onClick={() => setEditing(ed => ({ ...ed, form: { ...ed.form, acompte: ed.form.acompte === val ? null : val } }))}
+                style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${editing.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#ddd"}`, background: editing.form.acompte === val ? (val === "oui" ? "#E8F8F1" : "#FEF0EB") : "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, color: editing.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#888" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
         </div>
         <div style={{ marginBottom: 16 }}>
           <Label>Prix €</Label>
@@ -1179,6 +1236,11 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                       <div style={{ fontSize: 12, color: "#777", fontStyle: "italic", background: "#F8FBFC", borderRadius: 6, padding: "5px 10px", border: "1px solid #eee", marginTop: 4 }}>
                         📝 {bk.notes}
                       </div>
+                    )}
+                    {bk.acompte && (
+                      <span style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8, background: bk.acompte === "oui" ? "#E8F8F1" : "#FEF0EB", color: bk.acompte === "oui" ? GREEN : CORAL }}>
+                        {bk.acompte === "oui" ? "✅ Acompte encaissé" : "❌ Acompte non encaissé"}
+                      </span>
                     )}
                   </div>
 
