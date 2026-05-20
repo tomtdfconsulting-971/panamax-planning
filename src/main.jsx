@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
 import { initializeApp } from 'firebase/app'
 import { getFirestore, doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore'
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth'
 
 const firebaseConfig = {
   apiKey: "AIzaSyD5CN_OaYLUTY6wRreTbS7q76kiJigvBZk",
@@ -14,15 +15,16 @@ const firebaseConfig = {
 };
 
 const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
+const db   = getFirestore(firebaseApp);
+const auth = getAuth(firebaseApp);
 
-// Toutes les données dans la collection "panamax" (autorisée par les règles Firestore)
 const safeKey = (key) => key.replace(/[^a-zA-Z0-9_-]/g, '_');
 
+// Storage API — requiert auth anonyme
 window.storage = {
   get: async (key) => {
     try {
-      const ref = doc(db, 'panamax', safeKey(key));
+      const ref  = doc(db, 'panamax', safeKey(key));
       const snap = await getDoc(ref);
       if (!snap.exists()) return null;
       return { key, value: snap.data().value, shared: true };
@@ -46,17 +48,58 @@ window.storage = {
       const ref = doc(db, 'panamax', safeKey(key));
       await deleteDoc(ref);
       return { key, deleted: true };
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
   },
-  list: async (prefix) => {
-    return { keys: [], prefix };
-  }
+  list: async () => ({ keys: [] }),
 };
+
+// Loader component shown while auth is initializing
+function AuthLoader() {
+  const [ready, setReady] = React.useState(false);
+  const [error, setError] = React.useState(null);
+
+  React.useEffect(() => {
+    // Sign in anonymously then render app
+    signInAnonymously(auth)
+      .then(() => setReady(true))
+      .catch(err => {
+        console.error('Auth error:', err);
+        setError(err.message);
+      });
+
+    // Also listen for auth state changes
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user) setReady(true);
+    });
+    return () => unsub();
+  }, []);
+
+  if (error) return (
+    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"system-ui", flexDirection:"column", gap:16, background:"#0D3D52", color:"#fff" }}>
+      <div style={{ fontSize:48 }}>⚠️</div>
+      <div style={{ fontSize:16, color:"rgba(255,255,255,0.7)", textAlign:"center", maxWidth:320 }}>
+        Erreur de connexion.<br/>Vérifiez votre connexion internet.
+      </div>
+      <button onClick={()=>window.location.reload()}
+        style={{ background:"#1A5F7A", color:"#fff", border:"none", borderRadius:10, padding:"10px 24px", cursor:"pointer", fontSize:14, fontWeight:700 }}>
+        Réessayer
+      </button>
+    </div>
+  );
+
+  if (!ready) return (
+    <div style={{ minHeight:"100vh", background:"#0D3D52", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:"#fff", fontFamily:"system-ui", gap:16 }}>
+      <img src="/1-ICONE-POISSON-PANAMAX-Original.png" alt="Panamax" style={{ width:80, height:80, objectFit:"contain", animation:"pulse 1.5s ease-in-out infinite" }} />
+      <div style={{ fontSize:15, color:"rgba(255,255,255,0.6)" }}>Connexion en cours…</div>
+      <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }`}</style>
+    </div>
+  );
+
+  return <App />;
+}
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <AuthLoader />
   </React.StrictMode>,
 )
