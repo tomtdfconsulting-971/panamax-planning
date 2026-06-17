@@ -117,36 +117,55 @@ function useData() {
   const [sources, setSources] = useState({ ...DEFAULT_SOURCES });
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    try {
-      const r = await window.storage.get(STORE_KEY, true);
-      if (r) setData(JSON.parse(r.value));
-    } catch {}
-    try {
-      const rs = await window.storage.get(STORE_KEY + "-sources", true);
-      if (rs) {
-        const parsed = JSON.parse(rs.value);
+  useEffect(() => {
+    let loadedMain = false, loadedSources = false;
+    const checkReady = () => { if (loadedMain && loadedSources) setLoading(false); };
+
+    // ── Real-time listener for planning data ──────────────
+    const unsubData = window.storage.subscribe(STORE_KEY, (r) => {
+      try {
+        const parsed = JSON.parse(r.value);
+        setData(parsed);
+      } catch {}
+      if (!loadedMain) { loadedMain = true; checkReady(); }
+    });
+
+    // ── Real-time listener for sources ────────────────────
+    const unsubSources = window.storage.subscribe(STORE_KEY + "-sources", (r) => {
+      try {
+        const parsed = JSON.parse(r.value);
         setSources(parsed);
-        SOURCES = parsed; // update module-level variable
-      }
-    } catch {}
-    setLoading(false);
+        SOURCES = parsed;
+      } catch {}
+      if (!loadedSources) { loadedSources = true; checkReady(); }
+    });
+
+    // Fallback: if no data in Firebase yet, mark as loaded after 3s
+    const fallback = setTimeout(() => {
+      loadedMain = true; loadedSources = true; checkReady();
+    }, 3000);
+
+    return () => {
+      if (unsubData) unsubData();
+      if (unsubSources) unsubSources();
+      clearTimeout(fallback);
+    };
   }, []);
 
-  useEffect(() => { load(); const t = setInterval(load, 9000); return () => clearInterval(t); }, [load]);
+  const reload = useCallback(() => {}, []); // no-op, real-time handles it
 
   const save = async (next) => {
-    setData(next);
+    setData(next); // optimistic update
     try { await window.storage.set(STORE_KEY, JSON.stringify(next), true); } catch {}
   };
 
   const saveSources = async (next) => {
     setSources(next);
-    SOURCES = next; // update module-level variable
+    SOURCES = next;
     try { await window.storage.set(STORE_KEY + "-sources", JSON.stringify(next), true); } catch {}
   };
 
-  return { data, save, sources, saveSources, loading, reload: load };
+  return { data, save, sources, saveSources, loading, reload };
 }
 
 // ── Small UI pieces ────────────────────────────────────────────
@@ -267,6 +286,10 @@ function ResellerPortal({ data, save }) {
   const [editForm,       setEditForm]      = useState({ ...BLANK });
   const [delPending,     setDelPending]    = useState(null);
   const [identity,       setIdentity]      = useState(null); // source key of identified reseller
+  const [viewMode,  setViewMode]  = useState("month"); // "month" | "week"
+  const [weekStart, setWeekStart] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - (d.getDay()||7) + 1); d.setHours(0,0,0,0); return d;
+  });
 
   const reset = () => { setStep("cal"); setSelDate(null); setSelBoat(null); setForm({ ...BLANK }); };
 
@@ -311,23 +334,32 @@ function ResellerPortal({ data, save }) {
     let boatId   = selBoat.id;
 
     if (selDate._virtual) {
-      // Create the real date entry
       const newEntry = makeDateEntry(selDate.label);
-      // find matching boat by name
       const targetBoat = newEntry.boats.find(b => b.name === selBoat.name);
       dateId   = newEntry.id;
       boatId   = targetBoat ? targetBoat.id : newEntry.boats[0].id;
       nextData = { ...data, dates: [...data.dates, newEntry] };
     }
 
-    const pending = {
+    // Booking confirmed directly — no admin validation needed
+    const newBooking = {
       ...form,
       id: uid(), dateId, boatId,
       price: form.adults * P_AD + form.children * P_CH,
-      status: "pending",
+      status: "confirmed",
       ts: Date.now(),
     };
-    save({ ...nextData, pending: [...(nextData.pending || []), pending] });
+
+    nextData = {
+      ...nextData,
+      dates: nextData.dates.map(d => d.id !== dateId ? d : {
+        ...d, boats: d.boats.map(b => b.id !== boatId ? b : {
+          ...b, bookings: [...b.bookings, newBooking]
+        })
+      })
+    };
+
+    save(nextData);
     setStep("ok");
   };
 
@@ -495,7 +527,14 @@ function ResellerPortal({ data, save }) {
 
   // ── Mes réservations ──────────────────────
   if (step === "mes-resa") {
-    const pending = (data.pending || []).filter(p => p.source === identity);
+    // Show confirmed bookings from this reseller across all dates
+    const pending = data.dates.flatMap(date =>
+      date.boats.flatMap(boat =>
+        boat.bookings
+          .filter(bk => bk.source === identity)
+          .map(bk => ({ ...bk, dateId: date.id, boatId: boat.id, dateLabel: date.label, boatName: boat.name }))
+      )
+    ).sort((a,b) => (dateFromLabel(a.dateLabel)||new Date(0)) - (dateFromLabel(b.dateLabel)||new Date(0)));
     return (
       <div style={{ flex: 1, padding: "0 20px 40px", maxWidth: 560, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
         <button onClick={() => { setIdentity(null); setStep("cal"); }} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", borderRadius: 20, padding: "7px 18px", fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
@@ -516,19 +555,17 @@ function ResellerPortal({ data, save }) {
               <Btn onClick={() => setStep("cal")} style={{ marginTop: 12 }}>Faire une réservation</Btn>
             </div>
           ) : pending.map(p => {
-            const dateEntry = data.dates.find(d => d.id === p.dateId);
-            const boat = dateEntry?.boats.find(b => b.id === p.boatId);
-            const icon = boat?.name === "Aloes Vera" ? "🛥️" : "🚤";
-            const bname = boat?.name === "Aloes Vera" ? "Aloès Vera" : boat?.name || "Bateau";
+            const icon = p.boatName === "Aloes Vera" ? "🛥️" : "🚤";
+            const bname = p.boatName === "Aloes Vera" ? "Aloès Vera" : p.boatName || "Bateau";
             const isPendingDel = delPending === p.id;
             return (
               <div key={p.id} style={{ border: "1px solid #e0eef3", borderRadius: 14, padding: 16, marginBottom: 12 }}>
                 <Row style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
                   <div>
-                    <div style={{ fontWeight: 700, color: TEAL, fontSize: 14 }}>📅 {dateEntry?.label || "Date inconnue"}</div>
+                    <div style={{ fontWeight: 700, color: TEAL, fontSize: 14 }}>📅 {p.dateLabel || "Date inconnue"}</div>
                     <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{icon} {bname}</div>
                   </div>
-                  <span style={{ marginLeft: "auto", background: "#FFF8EE", color: ORANGE, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8, alignSelf: "flex-start" }}>⏳ En attente</span>
+                  <span style={{ marginLeft: "auto", background: "#E8F8F1", color: GREEN, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8, alignSelf: "flex-start" }}>✅ Confirmée</span>
                 </Row>
                 <div style={{ fontSize: 13, color: "#444", lineHeight: 1.9, marginBottom: 12 }}>
                   <div>👤 <strong>{p.name}</strong></div>
@@ -540,7 +577,7 @@ function ResellerPortal({ data, save }) {
                 </div>
                 {isPendingDel ? (
                   <Row gap={8}>
-                    <Btn small variant="danger" onClick={() => { save({ ...data, pending: data.pending.filter(x => x.id !== p.id) }); setDelPending(null); }}>Confirmer l'annulation</Btn>
+                    <Btn small variant="danger" onClick={() => { save({ ...data, dates: data.dates.map(d => d.id !== p.dateId ? d : { ...d, boats: d.boats.map(b => b.id !== p.boatId ? b : { ...b, bookings: b.bookings.filter(bk => bk.id !== p.id) }) }) }); setDelPending(null); }}>Confirmer l'annulation</Btn>
                     <Btn small variant="ghost" onClick={() => setDelPending(null)}>Annuler</Btn>
                   </Row>
                 ) : (
@@ -565,7 +602,11 @@ function ResellerPortal({ data, save }) {
     const bname = boat?.name === "Aloes Vera" ? "Aloès Vera" : boat?.name || "Bateau";
     const saveEdit = () => {
       const updated = { ...editingPending, ...editForm, price: editForm.adults * P_AD + editForm.children * P_CH };
-      save({ ...data, pending: data.pending.map(p => p.id === editingPending.id ? updated : p) });
+      save({ ...data, dates: data.dates.map(d => d.id !== editingPending.dateId ? d : {
+        ...d, boats: d.boats.map(b => b.id !== editingPending.boatId ? b : {
+          ...b, bookings: b.bookings.map(bk => bk.id !== editingPending.id ? bk : { ...updated, id: bk.id })
+        })
+      })});
       setEditingPending(null); setStep("mes-resa");
     };
     return (
@@ -618,18 +659,92 @@ function ResellerPortal({ data, save }) {
     );
   }
 
+  // ── Week helpers ──────────────────────────
+  const weekDaysR = Array.from({length:7},(_,i)=>{ const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
+  const prevWeekR = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); };
+  const nextWeekR = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); };
+  const weekLabelR = () => {
+    const end = new Date(weekStart); end.setDate(weekStart.getDate()+6);
+    return `${weekStart.toLocaleDateString("fr",{day:"numeric",month:"short"})} – ${end.toLocaleDateString("fr",{day:"numeric",month:"short",year:"numeric"})}`;
+  };
+
   // ── Main calendar ──────────────────────────
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 10px 40px", maxWidth: 700, margin: "0 auto", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
-      {/* Top bar: mes réservations */}
-      <Row style={{ justifyContent: "flex-end", padding: "12px 4px 0" }}>
+      {/* Top bar: mes réservations + view toggle */}
+      <Row style={{ justifyContent: "space-between", padding: "12px 4px 0", alignItems: "center" }}>
+        <div style={{ display:"flex", background:"rgba(255,255,255,0.15)", borderRadius:10, padding:2 }}>
+          {[["month","📅"],["week","📆"]].map(([m,lbl])=>(
+            <button key={m} onClick={()=>setViewMode(m)}
+              style={{ background:viewMode===m?"rgba(255,255,255,0.25)":"transparent", border:"none", borderRadius:8, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:viewMode===m?700:400, color:"#fff" }}>
+              {lbl} {m==="month"?"Mois":"Semaine"}
+            </button>
+          ))}
+        </div>
         <button onClick={() => setStep("mes-resa")}
-          style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 20, padding: "6px 16px", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+          style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", borderRadius: 20, padding: "6px 14px", cursor: "pointer", fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 5 }}>
           📋 Mes réservations
-          {(data.pending||[]).length > 0 && <span style={{ background: CORAL, borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "1px 7px" }}>{(data.pending||[]).length}</span>}
         </button>
       </Row>
 
+      {/* ── WEEK VIEW ── */}
+      {viewMode === "week" && (
+        <div style={{ flex:1, paddingTop:12 }}>
+          <Row style={{ justifyContent:"space-between", marginBottom:12, alignItems:"center" }}>
+            <button onClick={prevWeekR} style={{ background:"rgba(255,255,255,0.15)", border:"none", color:"#fff", width:36, height:36, borderRadius:18, cursor:"pointer", fontSize:18, fontWeight:700 }}>‹</button>
+            <span style={{ fontSize:13, fontWeight:700, color:"#fff" }}>{weekLabelR()}</span>
+            <button onClick={nextWeekR} style={{ background:"rgba(255,255,255,0.15)", border:"none", color:"#fff", width:36, height:36, borderRadius:18, cursor:"pointer", fontSize:18, fontWeight:700 }}>›</button>
+          </Row>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {weekDaysR.map(cell => {
+              const entry  = entryForDay(cell);
+              const isToday = cell.toDateString() === today.toDateString();
+              const isPast  = cell < new Date(today.getFullYear(), today.getMonth(), today.getDate());
+              const avail   = !isPast && entry.boats.some(b => spots(b) > 0);
+              const dayLabel = cell.toLocaleDateString("fr",{weekday:"long",day:"numeric",month:"long"});
+              return (
+                <button key={cell.toISOString()}
+                  onClick={()=>{ if(avail){ setSelDate(entry); setStep("boat"); } }}
+                  style={{ background:isToday?"rgba(255,255,255,0.22)":"rgba(255,255,255,0.09)", border:isToday?"2px solid rgba(255,255,255,0.65)":"1.5px solid rgba(255,255,255,0.13)", borderRadius:12, padding:"12px 14px", cursor:avail?"pointer":"default", textAlign:"left", opacity:isPast?0.4:1 }}>
+                  <Row style={{ marginBottom:8 }}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:800, color:"#fff", textTransform:"capitalize" }}>{dayLabel}</div>
+                    </div>
+                    {avail && <span style={{ background:"rgba(255,255,255,0.2)", color:"#fff", fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:8, flexShrink:0 }}>Réserver →</span>}
+                    {!avail && !isPast && <span style={{ color:CORAL, fontSize:11, fontWeight:700 }}>Complet</span>}
+                    {isPast && <span style={{ color:"rgba(255,255,255,0.35)", fontSize:11 }}>Passé</span>}
+                  </Row>
+                  <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                    {entry.boats.map(boat=>{
+                      const r=spots(boat); const p=pct(boat);
+                      const bc=r<=0?CORAL:p>70?ORANGE:"#27AE60";
+                      return(
+                        <div key={boat.id} style={{ background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"7px 10px" }}>
+                          <Row style={{ marginBottom:4 }}>
+                            <span style={{ fontSize:14 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
+                            <span style={{ fontSize:13, fontWeight:700, color:"#fff", flex:1, marginLeft:6 }}>{boat.name==="Aloes Vera"?"Aloès Vera":"Panamax"}</span>
+                            <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":"#FA9F6A" }}>{r<=0?"Complet":`R${r}`}</span>
+                          </Row>
+                          <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.15)", overflow:"hidden" }}>
+                            <div style={{ height:"100%", width:`${p}%`, background:isPast?"rgba(255,255,255,0.2)":bc, borderRadius:2 }}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ marginTop:14, background:"rgba(255,255,255,0.09)", borderRadius:12, padding:"12px 16px" }}>
+            <div style={{ color:"rgba(255,255,255,0.85)", fontSize:13, fontWeight:700, marginBottom:4 }}>ℹ️ Comment réserver</div>
+            <div style={{ color:"rgba(255,255,255,0.55)", fontSize:12, lineHeight:1.8 }}>Cliquez sur un jour disponible → choisissez votre bateau → remplissez le formulaire.<br/>Tarifs : {P_AD}€/adulte · {P_CH}€/enfant.</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MONTH VIEW ── */}
+      {viewMode === "month" && (<>
       {/* Month nav */}
       <Row style={{ justifyContent: "space-between", padding: "12px 4px 14px" }}>
         <button onClick={prevMonth} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", width: 40, height: 40, borderRadius: 20, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>‹</button>
@@ -692,7 +807,7 @@ function ResellerPortal({ data, save }) {
                     <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 4, padding: "2px 4px", overflow: "hidden", minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2, minWidth: 0 }}>
                         <span style={{ fontSize: 9, lineHeight: 1, flexShrink: 0 }}>{boat.name === "Aloes Vera" ? "🛥️" : "🚤"}</span>
-                        <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A", flexShrink: 0, marginLeft: 1 }}>{r <= 0 ? "✕" : `${r}p`}</span>
+                        <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A", flexShrink: 0, marginLeft: 1 }}>{r <= 0 ? "✕" : `R${r}`}</span>
                       </div>
                       <div style={{ height: 2, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${p}%`, background: bc, borderRadius: 2 }} />
@@ -711,9 +826,10 @@ function ResellerPortal({ data, save }) {
         <div style={{ color: "rgba(255,255,255,0.9)", fontSize: 13, fontWeight: 700, marginBottom: 5 }}>ℹ️ Comment réserver</div>
         <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 12, lineHeight: 1.8 }}>
           Cliquez sur n'importe quel jour → choisissez votre bateau → remplissez le formulaire.<br />
-          Tarifs : {P_AD}€/adulte · {P_CH}€/enfant. Validation par Panamax sous 24h.
+          Tarifs : {P_AD}€/adulte · {P_CH}€/enfant.
         </div>
       </div>
+      </>)}
     </div>
   );
 }
@@ -1354,6 +1470,10 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const [delDate,  setDelDate]  = useState(null);
   const [adminStep, setAdminStep] = useState("day"); // "day" | "add-form" | "edit-form"
   const [addBoat,   setAddBoat]   = useState(null);  // boat selected for add
+  const [viewMode,  setViewMode]  = useState("month"); // "month" | "week"
+  const [weekStart, setWeekStart] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - (d.getDay()||7) + 1); d.setHours(0,0,0,0); return d;
+  });
 
   const prevMonth = () => { if (month === 0) { setYear(y => y-1); setMonth(11); } else setMonth(m => m-1); };
   const nextMonth = () => { if (month === 11) { setYear(y => y+1); setMonth(0); } else setMonth(m => m+1); };
@@ -1667,9 +1787,128 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
     );
   }
 
+  // ── Week view helpers ───────────────────────────────────────
+  const weekDays = Array.from({length:7},(_,i)=>{ const d=new Date(weekStart); d.setDate(weekStart.getDate()+i); return d; });
+  const prevWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()-7); setWeekStart(d); };
+  const nextWeek = () => { const d=new Date(weekStart); d.setDate(d.getDate()+7); setWeekStart(d); };
+  const weekLabel = () => {
+    const end = new Date(weekStart); end.setDate(weekStart.getDate()+6);
+    return `${weekStart.toLocaleDateString("fr",{day:"numeric",month:"short"})} – ${end.toLocaleDateString("fr",{day:"numeric",month:"short",year:"numeric"})}`;
+  };
+
   // ── Calendar view ──────────────────────────────────────────
   return (
     <div>
+      {/* View toggle */}
+      <div style={{ display:"flex", background:"#EBF7FA", borderRadius:10, padding:3, marginBottom:14, width:"fit-content" }}>
+        {[["month","📅 Mois"],["week","📆 Semaine"]].map(([m,lbl])=>(
+          <button key={m} onClick={()=>setViewMode(m)}
+            style={{ background:viewMode===m?"#fff":"transparent", border:"none", borderRadius:8, padding:"7px 18px", cursor:"pointer", fontSize:13, fontWeight:viewMode===m?700:400, color:viewMode===m?TEAL:"#888", boxShadow:viewMode===m?"0 1px 4px rgba(0,0,0,0.1)":"none" }}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {/* ── WEEK VIEW ── */}
+      {viewMode === "week" && (
+        <div>
+          {/* Week nav */}
+          <Row style={{ justifyContent:"space-between", marginBottom:14, alignItems:"center" }}>
+            <button onClick={prevWeek} style={{ background:"#EBF7FA", border:"none", color:TEAL, width:36, height:36, borderRadius:18, cursor:"pointer", fontSize:18, fontWeight:700 }}>‹</button>
+            <span style={{ fontSize:14, fontWeight:700, color:TEAL }}>{weekLabel()}</span>
+            <button onClick={nextWeek} style={{ background:"#EBF7FA", border:"none", color:TEAL, width:36, height:36, borderRadius:18, cursor:"pointer", fontSize:18, fontWeight:700 }}>›</button>
+          </Row>
+
+          {/* Day cards */}
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            {weekDays.map(cell => {
+              const key   = `${cell.getFullYear()}-${cell.getMonth()}-${cell.getDate()}`;
+              const entry = byDay[key];
+              const isToday = cell.toDateString() === today.toDateString();
+              const dp    = entry ? entry.boats.reduce((s,b)=>s+boatPax(b),0) : 0;
+              const dr    = entry ? entry.boats.reduce((s,b)=>s+boatRev(b),0) : 0;
+              const allBk = entry ? entry.boats.flatMap(boat=>boat.bookings.map(bk=>({...bk,boat}))) : [];
+              const dayLabel = cell.toLocaleDateString("fr",{weekday:"long",day:"numeric",month:"long"});
+
+              return (
+                <div key={key} style={{ background:"#fff", borderRadius:12, overflow:"hidden", border:`1.5px solid ${isToday?TEAL:"#e0eef3"}`, boxShadow:isToday?`0 0 0 2px ${TEAL}20`:"none" }}>
+
+                  {/* Day header */}
+                  <div style={{ background:isToday?TEAL:"#F0F8FB", padding:"10px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
+                    onClick={()=>{ if(entry){ setAdminStep("day"); setSelDay(entry.id); } else {
+                      const lbl=labelFromDate(cell); const newEntry={id:uid(),label:lbl,boats:[{id:uid(),name:"Aloes Vera",emoji:"ferry",bookings:[]},{id:uid(),name:"Panamax",emoji:"boat",bookings:[]}]};
+                      const next={...data,dates:[...data.dates,newEntry]}; save(next); setAdminStep("day"); setSelDay(newEntry.id);
+                    }}}>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:14, fontWeight:800, color:isToday?"#fff":DARK, textTransform:"capitalize" }}>{dayLabel}</div>
+                      {entry && <div style={{ fontSize:11, color:isToday?"rgba(255,255,255,0.7)":"#aaa", marginTop:1 }}>{dp} passager(s) · {fmtEur(dr)}</div>}
+                      {!entry && <div style={{ fontSize:11, color:isToday?"rgba(255,255,255,0.5)":"#ccc", marginTop:1 }}>Aucune réservation — cliquer pour ajouter</div>}
+                    </div>
+                    {entry && (
+                      <Row gap={6}>
+                        {entry.boats.map(boat=>{
+                          const r=spots(boat); const p=pct(boat);
+                          return(
+                            <div key={boat.id} style={{ textAlign:"center", minWidth:42 }}>
+                              <div style={{ fontSize:11 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</div>
+                              <div style={{ fontSize:10, fontWeight:700, color:isToday?"#fff":r<=0?CORAL:"#FA9F6A" }}>R{r}</div>
+                              <div style={{ height:3, width:40, borderRadius:2, background:"rgba(255,255,255,0.3)", overflow:"hidden", marginTop:2 }}>
+                                <div style={{ height:"100%", width:`${p}%`, background:isToday?"#fff":barColor(boat), borderRadius:2 }}/>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <span style={{ fontSize:12, color:isToday?"rgba(255,255,255,0.6)":"#bbb" }}>→</span>
+                      </Row>
+                    )}
+                  </div>
+
+                  {/* Bookings by source */}
+                  {entry && allBk.length > 0 && (
+                    <div style={{ padding:"10px 14px", display:"flex", flexDirection:"column", gap:6 }}>
+                      {/* Group by source */}
+                      {Object.entries(
+                        allBk.reduce((acc,bk)=>{
+                          const src=bk.source||"autre";
+                          if(!acc[src]) acc[src]=[];
+                          acc[src].push(bk); return acc;
+                        },{})
+                      ).map(([src, bks])=>{
+                        const srcColor = SOURCES[src]?.color||"#999";
+                        const srcLabel = SOURCES[src]?.label||src;
+                        const totalPax = bks.reduce((s,b)=>s+b.adults+b.children,0);
+                        const totalRev = bks.reduce((s,b)=>s+b.price,0);
+                        return(
+                          <div key={src} style={{ background:`${srcColor}12`, borderRadius:8, padding:"8px 12px", borderLeft:`3px solid ${srcColor}` }}>
+                            <Row style={{ marginBottom:4 }}>
+                              <span style={{ background:srcColor, color:"#fff", fontSize:11, padding:"2px 10px", borderRadius:8, fontWeight:700 }}>{srcLabel}</span>
+                              <span style={{ fontSize:11, color:"#888", marginLeft:8 }}>{bks.length} rés. · {totalPax} pax</span>
+                              <span style={{ marginLeft:"auto", fontWeight:700, color:srcColor, fontSize:12 }}>{fmtEur(totalRev)}</span>
+                            </Row>
+                            {bks.map(bk=>(
+                              <Row key={bk.id} style={{ fontSize:12, color:DARK, padding:"3px 0", borderBottom:`1px solid ${srcColor}20`, gap:8 }}>
+                                <span style={{ fontSize:10 }}>{bk.boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
+                                <span style={{ fontWeight:600, flex:1 }}>{bk.name}</span>
+                                <span style={{ color:"#888" }}>{bk.children?`${bk.adults}+${bk.children}`:bk.adults} pax</span>
+                                {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>{bk.phone}</span>}
+                                <span style={{ fontWeight:700, color:bk.price===0?ORANGE:srcColor }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
+                                {bk.acompte&&<span style={{ fontSize:10, fontWeight:700, color:bk.acompte==="oui"?GREEN:CORAL }}>{bk.acompte==="oui"?"✅":"❌"}</span>}
+                              </Row>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── MONTH VIEW ── */}
+      {viewMode === "month" && (<>
       {/* Month nav */}
       <Row style={{ justifyContent: "space-between", marginBottom: 16 }}>
         <button onClick={prevMonth} style={{ background: "#EBF7FA", border: "none", color: TEAL, width: 38, height: 38, borderRadius: 19, cursor: "pointer", fontSize: 20, fontWeight: 700 }}>‹</button>
@@ -1731,7 +1970,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                             {boat.name === "Aloes Vera" ? "🛥️" : "🚤"}
                           </span>
                           <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>
-                            {r <= 0 ? "🚫" : `${r}p`}
+                            {r <= 0 ? "🚫" : `R${r}`}
                           </span>
                         </div>
                         <div style={{ height: 3, borderRadius: 2, background: isToday ? "rgba(255,255,255,0.2)" : "#ddd", overflow: "hidden" }}>
@@ -1747,8 +1986,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           );
         })}
       </div>
-
-
+      </>)}
     </div>
   );
 }
@@ -1811,7 +2049,7 @@ function AdminView({ data, save, sources, saveSources, reload }) {
   const gRev = data.dates.reduce((s, d) => s + d.boats.reduce((s2, b) => s2 + boatRev(b), 0), 0);
   const gPax = data.dates.reduce((s, d) => s + d.boats.reduce((s2, b) => s2 + boatPax(b), 0), 0);
   const gBk  = data.dates.reduce((s, d) => s + d.boats.reduce((s2, b) => s2 + b.bookings.length, 0), 0);
-  const pc   = (data.pending || []).length;
+
 
   return (
     <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: "#EBF7FA", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
@@ -1821,7 +2059,7 @@ function AdminView({ data, save, sources, saveSources, reload }) {
         <span style={{ fontSize: 15, fontWeight: 700 }}>Panamax · Admin</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-            {[["planning", "📅 Planning"], ["pending", `⏳ Attente${pc ? ` (${pc})` : ""}`], ["stats", "📊 Stats"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
+            {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
               <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: tab === v ? 700 : 400, whiteSpace: "nowrap" }}>{lbl}</button>
             ))}
             <button onClick={reload} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: "0 8px" }}>↻</button>
@@ -1845,49 +2083,6 @@ function AdminView({ data, save, sources, saveSources, reload }) {
 
 
         </>)}
-
-        {/* ── Pending tab ── */}
-        {tab === "pending" && (
-          <div>
-            <h2 style={{ color: TEAL, margin: "0 0 16px", fontSize: 20 }}>⏳ Demandes en attente</h2>
-            {(data.pending || []).length === 0
-              ? <div style={{ textAlign: "center", padding: "60px 20px", color: "#aaa" }}><div style={{ fontSize: 40, marginBottom: 10 }}>✅</div><p>Aucune demande en attente.</p></div>
-              : (data.pending || []).map(p => {
-                  const entry = data.dates.find(d => d.id === p.dateId);
-                  const boat  = entry?.boats.find(b => b.id === p.boatId);
-                  const icon  = boat?.name === "Aloes Vera" ? "🛥️" : "🚤";
-                  const dname = boat?.name === "Aloes Vera" ? "Aloès Vera" : boat?.name;
-                  return (
-                    <div key={p.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 18px", marginBottom: 10, border: "2px solid #F5CBA7" }}>
-                      <Row gap={8} style={{ marginBottom: 10, fontSize: 13, color: "#888", flexWrap: "wrap" }}>
-                        <span>📅 <strong style={{ color: DARK }}>{entry?.label || p.dateId}</strong></span>
-                        <span>·</span>
-                        <span>{icon} <strong style={{ color: DARK }}>{dname || p.boatId}</strong></span>
-                        <span style={{ marginLeft: "auto", fontSize: 11 }}>{new Date(p.ts).toLocaleString("fr")}</span>
-                      </Row>
-                      <Row gap={8} style={{ fontSize: 13, flexWrap: "wrap" }}>
-                        <span style={{ background: SOURCES[p.source]?.color || "#999", color: "#fff", fontSize: 10, padding: "2px 7px", borderRadius: 8, fontWeight: 700 }}>{SOURCES[p.source]?.label || "?"}</span>
-                        <span style={{ fontWeight: 700 }}>{p.children ? `${p.adults}+${p.children}` : p.adults}</span>
-                        <span style={{ flex: 1, fontWeight: 500 }}>{p.name}</span>
-                        {p.phone && <span style={{ color: "#999", fontSize: 11 }}>{p.phone}</span>}
-                        <span style={{ fontWeight: 700, color: TEAL }}>{fmtEur(p.adults * P_AD + p.children * P_CH)}</span>
-                  </Row>
-                  <Row gap={8} style={{ marginTop: 8 }}>
-                        <Btn small variant="success" onClick={() => approve(p)}>✓ Valider</Btn>
-                        <Btn small variant="danger"  onClick={() => reject(p)}>✕ Refuser</Btn>
-                      </Row>
-                    </div>
-                  );
-                })
-            }
-          </div>
-        )}
-
-        {/* ── Stats tab ── */}
-        {tab === "stats" && <StatsTab data={data} sources={sources} />}
-
-        {/* ── Revendeurs tab ── */}
-        {tab === "revendeurs" && <RevendeursTab sources={sources} saveSources={saveSources} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
