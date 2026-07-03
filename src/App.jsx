@@ -5,7 +5,8 @@ const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
 const PIN       = "1234";
-const STORE_KEY = "panamax-v3";
+const STORE_KEY         = "panamax-v3";
+const STORE_KEY_SKIPPERS = "panamax-v3-skippers"; // skipper accounts & planning
 const TEAL      = "#1A5F7A";
 const CORAL     = "#E8673A";
 const DARK      = "#0D3D52";
@@ -148,14 +149,23 @@ function parseWA(text) {
 }
 
 // ── Shared storage hook ────────────────────────────────────────
+const DEFAULT_SKIPPERS_DATA = {
+  skippers: [
+    { id: "ludo",   name: "Ludo",   pin: "0000", color: "#2471A3", active: true },
+    { id: "camille",name: "Camille",pin: "1111", color: "#8E44AD", active: true },
+  ],
+  planning: {}, // { "dateLabel": { "aloes": "ludo", "panamax": "camille" } }
+};
+
 function useData() {
-  const [data,    setData]    = useState({ dates: [], pending: [] });
-  const [sources, setSources] = useState({ ...DEFAULT_SOURCES });
-  const [loading, setLoading] = useState(true);
+  const [data,     setData]     = useState({ dates: [], pending: [] });
+  const [sources,  setSources]  = useState({ ...DEFAULT_SOURCES });
+  const [skData,   setSkData]   = useState({ ...DEFAULT_SKIPPERS_DATA });
+  const [loading,  setLoading]  = useState(true);
 
   useEffect(() => {
-    let loadedMain = false, loadedSources = false;
-    const checkReady = () => { if (loadedMain && loadedSources) setLoading(false); };
+    let loadedMain = false, loadedSources = false, loadedSkippers = false;
+    const checkReady = () => { if (loadedMain && loadedSources && loadedSkippers) setLoading(false); };
 
     // ── Real-time listener for planning data ──────────────
     const unsubData = window.storage.subscribe(STORE_KEY, (r) => {
@@ -176,14 +186,21 @@ function useData() {
       if (!loadedSources) { loadedSources = true; checkReady(); }
     });
 
+    // ── Real-time listener for skippers ──────────────────
+    const unsubSkippers = window.storage.subscribe(STORE_KEY_SKIPPERS, (r) => {
+      try { setSkData(JSON.parse(r.value)); } catch {}
+      if (!loadedSkippers) { loadedSkippers = true; checkReady(); }
+    });
+
     // Fallback: if no data in Firebase yet, mark as loaded after 3s
     const fallback = setTimeout(() => {
-      loadedMain = true; loadedSources = true; checkReady();
+      loadedMain = true; loadedSources = true; loadedSkippers = true; checkReady();
     }, 3000);
 
     return () => {
-      if (unsubData) unsubData();
-      if (unsubSources) unsubSources();
+      if (unsubData)     unsubData();
+      if (unsubSources)  unsubSources();
+      if (unsubSkippers) unsubSkippers();
       clearTimeout(fallback);
     };
   }, []);
@@ -201,7 +218,12 @@ function useData() {
     try { await window.storage.set(STORE_KEY + "-sources", JSON.stringify(next), true); } catch {}
   };
 
-  return { data, save, sources, saveSources, loading, reload };
+  const saveSkData = async (next) => {
+    setSkData(next);
+    try { await window.storage.set(STORE_KEY_SKIPPERS, JSON.stringify(next), true); } catch {}
+  };
+
+  return { data, save, sources, saveSources, skData, saveSkData, loading, reload };
 }
 
 // ── Small UI pieces ────────────────────────────────────────────
@@ -2406,7 +2428,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 // ════════════════════════════════════════════════════════════════
 // ADMIN VIEW
 // ════════════════════════════════════════════════════════════════
-function AdminView({ data, save, sources, saveSources, reload }) {
+function AdminView({ data, save, sources, saveSources, skData, saveSkData, reload }) {
   const [tab,      setTab]      = useState("planning");
   const [exp,      setExp]      = useState({});
   const [editing,  setEditing]  = useState(null);
@@ -2471,7 +2493,7 @@ function AdminView({ data, save, sources, saveSources, reload }) {
         <span style={{ fontSize: 15, fontWeight: 700 }}>Panamax · Admin</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-            {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["compta", "🧾 Comptabilité"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
+            {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["compta", "🧾 Comptabilité"], ["skippers_mgmt", "⚓ Skippers"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
               <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: tab === v ? 700 : 400, whiteSpace: "nowrap" }}>{lbl}</button>
             ))}
             <button onClick={reload} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: "0 8px" }}>↻</button>
@@ -2498,6 +2520,9 @@ function AdminView({ data, save, sources, saveSources, reload }) {
 
         {/* ── Comptabilité tab ── */}
         {tab === "compta" && <ComptaTab data={data} sources={sources} />}
+
+        {/* ── Skippers management tab ── */}
+        {tab === "skippers_mgmt" && <SkippersMgmtTab skData={skData} saveSkData={saveSkData} data={data} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
@@ -2536,6 +2561,749 @@ function AdminView({ data, save, sources, saveSources, reload }) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// ADMIN — SKIPPERS MANAGEMENT TAB
+// ════════════════════════════════════════════════════════════════
+function SkippersMgmtTab({ skData, saveSkData, data }) {
+  const today = new Date();
+  const [tab,      setTab]      = useState("planning");
+  const [notif,    setNotif]    = useState(null);
+  const [curMonth, setCurMonth] = useState(today.getMonth());
+  const [curYear,  setCurYear]  = useState(today.getFullYear());
+  const [editSk,   setEditSk]   = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [addingSk, setAddingSk] = useState(false);
+  const [newSk,    setNewSk]    = useState({ name:"", pin:"", color:"#2471A3" });
+
+  const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
+  const planning = skData?.planning || {};
+  const skippers = skData?.skippers || [];
+
+  const prevMonth = () => { if(curMonth===0){setCurYear(y=>y-1);setCurMonth(11);}else setCurMonth(m=>m-1); };
+  const nextMonth = () => { if(curMonth===11){setCurYear(y=>y+1);setCurMonth(0);}else setCurMonth(m=>m+1); };
+
+  const firstDay = new Date(curYear, curMonth, 1);
+  const lastDay  = new Date(curYear, curMonth+1, 0);
+  let startDow = firstDay.getDay(); startDow = startDow===0?6:startDow-1;
+  const cells = Array(startDow).fill(null);
+  for(let d=1;d<=lastDay.getDate();d++) cells.push(new Date(curYear,curMonth,d));
+
+  const assignSkipper = (dateLabel, boatKey, skipperId) => {
+    const p = { ...planning };
+    if (!p[dateLabel]) p[dateLabel] = {};
+    if (skipperId) p[dateLabel][boatKey] = skipperId;
+    else { delete p[dateLabel][boatKey]; if(Object.keys(p[dateLabel]).length===0) delete p[dateLabel]; }
+    saveSkData({ ...skData, planning: p });
+  };
+
+  const saveSkipper = () => {
+    if (!editForm.name?.trim()) return;
+    const updated = skippers.map(s => s.id===editSk.id ? { ...s, name:editForm.name, ...(editForm.pin?{pin:editForm.pin}:{}) } : s);
+    saveSkData({ ...skData, skippers: updated });
+    setEditSk(null); toast("Skipper modifié ✓");
+  };
+
+  const addSkipper = () => {
+    if (!newSk.name.trim() || !newSk.pin.trim()) return;
+    const id = newSk.name.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+uid();
+    saveSkData({ ...skData, skippers: [...skippers, { id, ...newSk, active:true }] });
+    setAddingSk(false); setNewSk({ name:"", pin:"", color:"#2471A3" }); toast("Skipper ajouté ✓");
+  };
+
+  const toggleActive = (id) => {
+    saveSkData({ ...skData, skippers: skippers.map(s => s.id===id ? {...s,active:!s.active} : s) });
+  };
+
+  const SK_COLORS = ["#2471A3","#8E44AD","#C0392B","#1E8449","#E67E22","#16A085","#1A5F7A","#7F8C8D"];
+
+  const PlanningView = () => {
+    const [dayModal, setDayModal] = useState(null);
+    return (
+      <div>
+        <Row style={{ justifyContent:"space-between", marginBottom:14 }}>
+          <button onClick={prevMonth} style={{ background:"#EBF7FA", border:"none", color:TEAL, width:36, height:36, borderRadius:18, cursor:"pointer", fontSize:18, fontWeight:700 }}>‹</button>
+          <span style={{ fontSize:18, fontWeight:800, color:TEAL }}>{MONTHS[curMonth]} {curYear}</span>
+          <button onClick={nextMonth} style={{ background:"#EBF7FA", border:"none", color:TEAL, width:36, height:36, borderRadius:18, cursor:"pointer", fontSize:18, fontWeight:700 }}>›</button>
+        </Row>
+        <Row gap={10} style={{ marginBottom:10, flexWrap:"wrap" }}>
+          {skippers.filter(s=>s.active).map(s=>(
+            <Row key={s.id} gap={5} style={{ fontSize:12, color:"#555" }}>
+              <div style={{ width:10,height:10,borderRadius:5,background:s.color,flexShrink:0 }}/>{s.name}
+            </Row>
+          ))}
+        </Row>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,minmax(0,1fr))", gap:2, marginBottom:2 }}>
+          {DAYS_SHORT.map(d=><div key={d} style={{ textAlign:"center", fontSize:10, fontWeight:700, color:"#888", padding:"2px 0" }}>{d}</div>)}
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,minmax(0,1fr))", gap:2, marginBottom:14 }}>
+          {cells.map((cell,i) => {
+            if (!cell) return <div key={"e"+i}/>;
+            const label  = labelFromDate(cell);
+            const assign = planning[label] || {};
+            const isToday= cell.toDateString()===today.toDateString();
+            const aSk    = skippers.find(s=>s.id===assign.aloes);
+            const pSk    = skippers.find(s=>s.id===assign.panamax);
+            return (
+              <button key={cell.toISOString()} onClick={()=>setDayModal({label})}
+                style={{ background:isToday?`${TEAL}18`:(aSk||pSk)?"#F0F8FB":"#fff", border:isToday?`2px solid ${TEAL}`:"1px solid #eee", borderRadius:7, padding:"4px 2px", cursor:"pointer", minHeight:56, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                <span style={{ fontSize:11, fontWeight:isToday?800:500, color:isToday?TEAL:DARK }}>{cell.getDate()}</span>
+                {aSk&&<div style={{ fontSize:7, background:aSk.color, color:"#fff", borderRadius:3, padding:"1px 3px", fontWeight:700, width:"100%", textAlign:"center", overflow:"hidden" }}>🛥 {aSk.name}</div>}
+                {pSk&&<div style={{ fontSize:7, background:pSk.color, color:"#fff", borderRadius:3, padding:"1px 3px", fontWeight:700, width:"100%", textAlign:"center", overflow:"hidden" }}>🚤 {pSk.name}</div>}
+              </button>
+            );
+          })}
+        </div>
+        {dayModal && (
+          <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+            <div style={{ background:"#fff", borderRadius:16, padding:24, maxWidth:360, width:"100%", boxShadow:"0 8px 32px rgba(0,0,0,0.2)" }}>
+              <Row style={{ marginBottom:18 }}>
+                <span style={{ fontWeight:800, color:TEAL, fontSize:16 }}>📅 {dayModal.label}</span>
+                <button onClick={()=>setDayModal(null)} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", fontSize:22, color:"#bbb", lineHeight:1 }}>✕</button>
+              </Row>
+              {[{key:"aloes",icon:"🛥️",name:"Aloès Vera"},{key:"panamax",icon:"🚤",name:"Panamax"}].map(boat=>(
+                <div key={boat.key} style={{ marginBottom:14 }}>
+                  <Label>{boat.icon} {boat.name}</Label>
+                  <select value={planning[dayModal.label]?.[boat.key]||""} onChange={e=>assignSkipper(dayModal.label,boat.key,e.target.value)} style={inputStyle}>
+                    <option value="">— Non assigné —</option>
+                    {skippers.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              ))}
+              <Btn full onClick={()=>setDayModal(null)} style={{ marginTop:4 }}>Fermer</Btn>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const AccountsView = () => (
+    <div>
+      <Row style={{ marginBottom:16 }}>
+        <h3 style={{ margin:0, color:TEAL }}>Comptes skippers</h3>
+        <div style={{ marginLeft:"auto" }}><Btn onClick={()=>{ setAddingSk(true); setEditSk(null); }}>+ Ajouter</Btn></div>
+      </Row>
+      {addingSk && (
+        <div style={{ background:"#F0F8FB", borderRadius:12, padding:16, marginBottom:14, border:`1px solid ${TEAL}30` }}>
+          <div style={{ fontWeight:700, color:TEAL, marginBottom:14 }}>+ Nouveau skipper</div>
+          <Grid cols="1fr 1fr" gap={10} style={{ marginBottom:12 }}>
+            <FInput label="Nom" value={newSk.name} onChange={e=>setNewSk(f=>({...f,name:e.target.value}))} placeholder="Prénom..." />
+            <FInput label="Code PIN" type="password" value={newSk.pin} onChange={e=>setNewSk(f=>({...f,pin:e.target.value}))} placeholder="4+ chiffres" />
+          </Grid>
+          <div style={{ marginBottom:12 }}>
+            <Label>Couleur</Label>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginTop:4 }}>
+              {SK_COLORS.map(c=>(
+                <button key={c} onClick={()=>setNewSk(f=>({...f,color:c}))} style={{ width:28, height:28, borderRadius:14, background:c, border:newSk.color===c?"3px solid #fff":"3px solid transparent", outline:newSk.color===c?`2px solid ${c}`:"none", cursor:"pointer" }}/>
+              ))}
+            </div>
+          </div>
+          <Row gap={8}>
+            <Btn onClick={addSkipper} disabled={!newSk.name.trim()||!newSk.pin.trim()}>Enregistrer</Btn>
+            <Btn variant="ghost" onClick={()=>setAddingSk(false)}>Annuler</Btn>
+          </Row>
+        </div>
+      )}
+      {skippers.map(sk => {
+        const isEd = editSk?.id===sk.id;
+        return (
+          <div key={sk.id} style={{ background:"#fff", borderRadius:10, border:"1px solid #e0eef3", marginBottom:8, overflow:"hidden" }}>
+            {isEd ? (
+              <div style={{ padding:14, background:"#F0F8FB" }}>
+                <Grid cols="1fr 1fr" gap={10} style={{ marginBottom:12 }}>
+                  <FInput label="Nom" value={editForm.name||""} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))} />
+                  <FInput label="Nouveau PIN" type="password" value={editForm.pin||""} onChange={e=>setEditForm(f=>({...f,pin:e.target.value}))} placeholder="Laisser vide = inchangé" />
+                </Grid>
+                <Row gap={8}><Btn small onClick={saveSkipper}>Enregistrer</Btn><Btn small variant="ghost" onClick={()=>setEditSk(null)}>Annuler</Btn></Row>
+              </div>
+            ) : (
+              <Row style={{ padding:"12px 14px" }}>
+                <div style={{ width:34,height:34,borderRadius:17,background:sk.color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:15,flexShrink:0 }}>{sk.name[0]}</div>
+                <div style={{ flex:1, marginLeft:10 }}>
+                  <div style={{ fontWeight:700, color:DARK }}>{sk.name}</div>
+                  <div style={{ fontSize:11, color:sk.active?GREEN:"#bbb" }}>{sk.active?"● Actif":"○ Inactif"}</div>
+                </div>
+                <Row gap={6}>
+                  <button onClick={()=>{ setEditSk(sk); setEditForm({name:sk.name,pin:""}); setAddingSk(false); }} style={{ background:"#EBF7FA", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
+                  <button onClick={()=>toggleActive(sk.id)} style={{ background:sk.active?"#FEF0EB":"#E8F8F1", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:sk.active?CORAL:GREEN, fontWeight:600 }}>{sk.active?"Désactiver":"Activer"}</button>
+                </Row>
+              </Row>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const RecapView = () => {
+    const allBk = data.dates.flatMap(date =>
+      date.boats.flatMap(boat =>
+        boat.bookings.filter(bk=>bk.paiements_solde?.length>0).map(bk=>({...bk,dateLabel:date.label}))
+      )
+    );
+    const bySkipper = {};
+    const byMethod  = { cb:0, cash:0, ancv:0 };
+    for (const bk of allBk) {
+      const skId = bk.skipper_encaisseur||"inconnu";
+      if (!bySkipper[skId]) bySkipper[skId]={ total:0,cb:0,cash:0,ancv:0,count:0 };
+      for (const p of (bk.paiements_solde||[])) {
+        bySkipper[skId][p.methode]=(bySkipper[skId][p.methode]||0)+p.montant;
+        bySkipper[skId].total+=p.montant;
+        byMethod[p.methode]=(byMethod[p.methode]||0)+p.montant;
+      }
+      bySkipper[skId].count++;
+    }
+    const total = Object.values(byMethod).reduce((s,v)=>s+v,0);
+    return (
+      <div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+          {PAY_METHODS.map(m=>(
+            <div key={m.id} style={{ background:m.color, borderRadius:10, padding:"12px 10px", textAlign:"center" }}>
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.75)", marginBottom:4 }}>{m.icon} {m.label}</div>
+              <div style={{ fontSize:18, fontWeight:800, color:"#fff" }}>{fmtEur(byMethod[m.id]||0)}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ background:"#fff", borderRadius:12, padding:"14px 16px", marginBottom:14, border:"1px solid #deeaf0", textAlign:"center" }}>
+          <div style={{ fontSize:12, color:"#888", marginBottom:3 }}>💰 Total encaissé soldes</div>
+          <div style={{ fontSize:26, fontWeight:800, color:TEAL }}>{fmtEur(total)}</div>
+        </div>
+        <div style={{ background:"#fff", borderRadius:12, border:"1px solid #deeaf0", overflow:"hidden" }}>
+          <div style={{ padding:"10px 16px", borderBottom:"1px solid #f0f5f7", fontWeight:700, color:TEAL, fontSize:13 }}>Par skipper encaisseur</div>
+          {Object.entries(bySkipper).map(([skId,stats])=>{
+            const sk=skippers.find(s=>s.id===skId);
+            return (
+              <Row key={skId} style={{ padding:"10px 16px", borderBottom:"1px solid #f5f8fa", gap:10 }}>
+                <div style={{ width:30,height:30,borderRadius:15,background:sk?.color||"#999",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:13,flexShrink:0 }}>{(sk?.name||"?")[0]}</div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{sk?.name||skId}</div>
+                  <div style={{ fontSize:11, color:"#888" }}>
+                    {stats.count} encaissement(s)
+                    {stats.cb>0&&<span> · 💳 {fmtEur(stats.cb)}</span>}
+                    {stats.cash>0&&<span> · 💵 {fmtEur(stats.cash)}</span>}
+                    {stats.ancv>0&&<span> · 🎫 {fmtEur(stats.ancv)}</span>}
+                  </div>
+                </div>
+                <span style={{ fontWeight:800, color:TEAL, fontSize:14 }}>{fmtEur(stats.total)}</span>
+              </Row>
+            );
+          })}
+          {Object.keys(bySkipper).length===0&&<div style={{ padding:20, textAlign:"center", color:"#bbb", fontSize:13 }}>Aucun encaissement enregistré.</div>}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      <div style={{ display:"flex", background:"#EBF7FA", borderRadius:10, padding:3, marginBottom:16, width:"fit-content", flexWrap:"wrap", gap:2 }}>
+        {[["planning","🗓️ Planning"],["accounts","👤 Comptes"],["recap","💰 Encaissements"]].map(([v,lbl])=>(
+          <button key={v} onClick={()=>setTab(v)} style={{ background:tab===v?"#fff":"transparent", border:"none", borderRadius:8, padding:"7px 14px", cursor:"pointer", fontSize:12, fontWeight:tab===v?700:400, color:tab===v?TEAL:"#888", boxShadow:tab===v?"0 1px 4px rgba(0,0,0,0.1)":"none" }}>{lbl}</button>
+        ))}
+      </div>
+      {tab==="planning" && <PlanningView />}
+      {tab==="accounts" && <AccountsView />}
+      {tab==="recap"    && <RecapView />}
+      {notif&&<div style={{ position:"fixed",bottom:22,left:"50%",transform:"translateX(-50%)",background:notif.ok?TEAL:CORAL,color:"#fff",padding:"10px 24px",borderRadius:28,fontSize:14,fontWeight:600,zIndex:9999 }}>{notif.msg}</div>}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// SKIPPER GATE — PIN LOGIN
+// ════════════════════════════════════════════════════════════════
+function SkipperGate({ skData, onLogin, onCancel }) {
+  const [pin, setPin] = useState("");
+  const [err, setErr] = useState(false);
+  const check = () => {
+    const sk = (skData?.skippers || []).find(s => s.pin === pin && s.active);
+    if (sk) { onLogin(sk); }
+    else { setErr(true); setPin(""); setTimeout(() => setErr(false), 1500); }
+  };
+  return (
+    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,#0D3D52 0%,#1A5F7A 60%,#2E86AB 100%)`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Segoe UI',system-ui,sans-serif" }}>
+      <div style={{ background:"#fff", borderRadius:20, padding:40, textAlign:"center", maxWidth:320, width:"100%" }}>
+        <div style={{ fontSize:48, marginBottom:8 }}>⚓</div>
+        <h2 style={{ color:TEAL, margin:"0 0 6px" }}>Accès Skipper</h2>
+        <p style={{ color:"#888", fontSize:14, marginBottom:24 }}>Entrez votre code PIN</p>
+        <input type="password" value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}
+          placeholder="Code PIN"
+          style={{ width:"100%", padding:"12px 14px", border:`2px solid ${err?CORAL:"#ddd"}`, borderRadius:10, fontSize:18, textAlign:"center", boxSizing:"border-box", letterSpacing:8, marginBottom:12 }} />
+        {err && <p style={{ color:CORAL, fontSize:13, margin:"0 0 10px" }}>Code incorrect</p>}
+        <Btn full onClick={check} style={{ padding:12, fontSize:15, marginBottom:10 }}>Accéder →</Btn>
+        <button onClick={onCancel} style={{ background:"none", border:"none", color:"#aaa", cursor:"pointer", fontSize:13 }}>Retour</button>
+      </div>
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// SKIPPER VIEW
+// ════════════════════════════════════════════════════════════════
+const PAY_METHODS = [
+  { id:"cb",   label:"CB",          icon:"💳", color:"#2471A3" },
+  { id:"cash", label:"Cash",        icon:"💵", color:"#1E8449" },
+  { id:"ancv", label:"Chèque Vac.", icon:"🎫", color:"#009B77" },
+];
+
+function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) {
+  const today = new Date();
+  const [tab,     setTab]     = useState("today");   // today | planning | exchange
+  const [selDate, setSelDate] = useState(null);       // date entry for encaissement
+  const [selBk,   setSelBk]   = useState(null);       // booking being paid
+  const [payForm, setPayForm] = useState([]);          // [{ methode, montant }]
+  const [notif,   setNotif]   = useState(null);
+  const [exchReq, setExchReq] = useState(null);       // exchange request being composed
+
+  const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
+
+  // Get today's date entry
+  const todayLabel = labelFromDate(today);
+  const todayEntry = data.dates.find(d => d.label === todayLabel);
+
+  // All bookings across all dates for this skipper's planning
+  const myPlanningDates = Object.entries(skData?.planning || {})
+    .filter(([label, assignment]) => assignment?.aloes === skipperUser.id || assignment?.panamax === skipperUser.id)
+    .map(([label]) => label)
+    .sort();
+
+  // Save payment for a booking
+  const savePayment = () => {
+    const total = payForm.reduce((s, p) => s + (p.montant||0), 0);
+    const bkReste = Math.max(0, selBk.price - (selBk.acompte_amount||0));
+    if (total > bkReste) { toast("Montant supérieur au reste à payer", false); return; }
+
+    const updatedBk = {
+      ...selBk,
+      paiements_solde: payForm.filter(p => p.montant > 0),
+      skipper_encaisseur: skipperUser.id,
+      solde_encaisse: total,
+      solde_date: new Date().toISOString(),
+    };
+
+    const next = { ...data, dates: data.dates.map(d => d.label !== selDate.label ? d : {
+      ...d, boats: d.boats.map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBk.id ? bk : updatedBk) }))
+    })};
+    save(next);
+    setSelBk(null); setPayForm([]);
+    toast("Solde encaissé ✓");
+  };
+
+  // Move booking from one boat to another
+  const moveBooking = (bk, fromBoat, toBoat, dateEntry) => {
+    const next = { ...data, dates: data.dates.map(d => d.label !== dateEntry.label ? d : {
+      ...d, boats: d.boats.map(b => {
+        if (b.id === fromBoat.id) return { ...b, bookings: b.bookings.filter(x => x.id !== bk.id) };
+        if (b.id === toBoat.id)   return { ...b, bookings: [...b.bookings, bk] };
+        return b;
+      })
+    })};
+    save(next);
+    toast(`${bk.name} déplacé vers ${toBoat.name === "Aloes Vera" ? "Aloès Vera" : toBoat.name} ✓`);
+  };
+
+  // Assign skipper to boat for a date
+  const assignSkipper = (dateLabel, boatKey, skipperId) => {
+    const planning = { ...(skData?.planning || {}) };
+    if (!planning[dateLabel]) planning[dateLabel] = {};
+    planning[dateLabel][boatKey] = skipperId;
+    saveSkData({ ...skData, planning });
+    toast("Planning mis à jour ✓");
+  };
+
+  // Exchange planning between skippers (no admin validation needed)
+  const doExchange = (myDate, myBoat, theirDate, theirBoat) => {
+    const planning = { ...(skData?.planning || {}) };
+    const mySkipper    = skipperUser.id;
+    const otherSkipper = (skData?.skippers || []).find(s => s.id !== mySkipper)?.id;
+    if (!otherSkipper) return;
+
+    // Swap assignments
+    if (!planning[myDate])    planning[myDate]    = {};
+    if (!planning[theirDate]) planning[theirDate] = {};
+    const tmp = planning[myDate][myBoat];
+    planning[myDate][myBoat]       = planning[theirDate]?.[theirBoat] || otherSkipper;
+    planning[theirDate][theirBoat] = tmp || mySkipper;
+
+    saveSkData({ ...skData, planning });
+    setExchReq(null);
+    toast("Échange effectué ✓");
+  };
+
+  // ── TODAY TAB ──────────────────────────────────────────────
+  const TodayTab = () => {
+    const [openBkId, setOpenBkId] = useState(null);
+
+    if (!todayEntry) return (
+      <div style={{ textAlign:"center", padding:"40px 16px", color:"#888" }}>
+        <div style={{ fontSize:40, marginBottom:10 }}>📅</div>
+        <p>Aucune sortie planifiée aujourd'hui.</p>
+        <div style={{ fontSize:13, color:"#aaa", marginTop:8 }}>{todayLabel}</div>
+      </div>
+    );
+
+    const planning = skData?.planning?.[todayLabel] || {};
+    const otherSkippers = (skData?.skippers || []).filter(s => s.id !== skipperUser.id);
+
+    return (
+      <div>
+        {/* Assign skippers to boats */}
+        <div style={{ background:"#fff", borderRadius:14, padding:"16px 18px", marginBottom:14, border:"1px solid #deeaf0" }}>
+          <div style={{ fontWeight:700, color:TEAL, fontSize:14, marginBottom:12 }}>⚓ Affectation des skippers</div>
+          <Grid cols="1fr 1fr" gap={10}>
+            {todayEntry.boats.map(boat => {
+              const boatKey   = boat.name === "Aloes Vera" ? "aloes" : "panamax";
+              const assigned  = planning[boatKey];
+              const allSkip   = skData?.skippers || [];
+              return (
+                <div key={boat.id} style={{ background:"#F0F8FB", borderRadius:10, padding:"12px 14px", border:`1px solid ${TEAL}20` }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:DARK, marginBottom:8 }}>
+                    {boat.name === "Aloes Vera" ? "🛥️ Aloès Vera" : "🚤 Panamax"}
+                  </div>
+                  <select value={assigned||""} onChange={e => assignSkipper(todayLabel, boatKey, e.target.value)}
+                    style={{ ...inputStyle, fontSize:13, fontWeight:600 }}>
+                    <option value="">— Skipper —</option>
+                    {allSkip.filter(s=>s.active).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  {assigned && <div style={{ fontSize:11, color:GREEN, marginTop:4, fontWeight:600 }}>
+                    ✓ {allSkip.find(s=>s.id===assigned)?.name}
+                  </div>}
+                </div>
+              );
+            })}
+          </Grid>
+        </div>
+
+        {/* Bookings per boat */}
+        {todayEntry.boats.map(boat => {
+          const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
+          const dname = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
+          const otherBoat = todayEntry.boats.find(b => b.id !== boat.id);
+          const totalReste = boat.bookings.reduce((s,bk) => s + Math.max(0, bk.price - (bk.acompte_amount||0) - (bk.solde_encaisse||0)), 0);
+
+          return (
+            <div key={boat.id} style={{ background:"#fff", borderRadius:14, marginBottom:12, border:"1px solid #deeaf0", overflow:"hidden" }}>
+              <div style={{ background:"#F0F8FB", padding:"12px 16px", borderBottom:"1px solid #e8f2f7" }}>
+                <Row>
+                  <span style={{ fontSize:20 }}>{icon}</span>
+                  <span style={{ fontWeight:800, color:TEAL, fontSize:15, flex:1, marginLeft:8 }}>{dname}</span>
+                  <span style={{ fontSize:12, color:"#888" }}>{boatPax(boat)} pax</span>
+                  {totalReste > 0 && <span style={{ fontSize:12, fontWeight:700, color:CORAL, marginLeft:10 }}>À encaisser : {fmtEur(totalReste)}</span>}
+                </Row>
+              </div>
+
+              {boat.bookings.length === 0 && (
+                <div style={{ padding:"16px", textAlign:"center", color:"#bbb", fontSize:13 }}>Aucune réservation</div>
+              )}
+
+              {boat.bookings.map(bk => {
+                const reste      = Math.max(0, bk.price - (bk.acompte_amount||0) - (bk.solde_encaisse||0));
+                const soldé      = reste <= 0;
+                const isOpen     = openBkId === bk.id;
+                const isPaying   = selBk?.id === bk.id;
+
+                return (
+                  <div key={bk.id} style={{ borderBottom:"1px solid #f5f8fa" }}>
+                    <div style={{ padding:"12px 16px" }}>
+                      <Row style={{ marginBottom:6 }}>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</div>
+                          <div style={{ fontSize:11, color:"#888", marginTop:2 }}>
+                            👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""} · {fmtEur(bk.price)}
+                            {bk.phone && ` · 📞 ${bk.phone_prefix||""}${bk.phone}`}
+                          </div>
+                          {/* Payment methods already collected */}
+                          {bk.paiements_solde?.length > 0 && (
+                            <div style={{ marginTop:4, display:"flex", gap:4, flexWrap:"wrap" }}>
+                              {bk.paiements_solde.map((p,i) => {
+                                const m = PAY_METHODS.find(x=>x.id===p.methode);
+                                return <span key={i} style={{ fontSize:10, fontWeight:700, background:m?.color||"#999", color:"#fff", padding:"2px 7px", borderRadius:6 }}>{m?.icon} {m?.label} {fmtEur(p.montant)}</span>;
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign:"right", flexShrink:0 }}>
+                          {soldé
+                            ? <span style={{ fontSize:12, fontWeight:700, color:GREEN }}>✅ Soldé</span>
+                            : <span style={{ fontSize:14, fontWeight:800, color:CORAL }}>{fmtEur(reste)}</span>
+                          }
+                        </div>
+                      </Row>
+
+                      {/* Actions */}
+                      {!soldé && (
+                        <Row gap={8} style={{ marginTop:6 }}>
+                          <Btn small onClick={() => {
+                            setSelBk(bk);
+                            setPayForm([{ methode:"cb", montant: reste }, { methode:"cash", montant:0 }, { methode:"ancv", montant:0 }]);
+                          }}>
+                            💳 Encaisser le solde
+                          </Btn>
+                          {otherBoat && (
+                            <button onClick={() => moveBooking(bk, boat, otherBoat, todayEntry)}
+                              style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
+                              → {otherBoat.name==="Aloes Vera"?"Aloès":"Panamax"}
+                            </button>
+                          )}
+                        </Row>
+                      )}
+
+                      {/* Payment form */}
+                      {isPaying && (
+                        <div style={{ background:"#F0F8FB", borderRadius:10, padding:14, marginTop:10, border:`1px solid ${TEAL}30` }}>
+                          <div style={{ fontWeight:700, color:TEAL, fontSize:13, marginBottom:12 }}>
+                            Encaissement solde — {bk.name} (reste : {fmtEur(reste)})
+                          </div>
+                          {PAY_METHODS.map(m => (
+                            <Row key={m.id} gap={10} style={{ marginBottom:8, alignItems:"center" }}>
+                              <span style={{ background:m.color, color:"#fff", fontSize:11, padding:"3px 10px", borderRadius:8, fontWeight:700, minWidth:80, textAlign:"center" }}>{m.icon} {m.label}</span>
+                              <input type="number" min="0" value={payForm.find(p=>p.methode===m.id)?.montant||0}
+                                onChange={e => setPayForm(f => f.map(p => p.methode===m.id ? {...p, montant:Math.max(0,+e.target.value)} : p))}
+                                style={{ ...inputStyle, width:100, flex:1 }} placeholder="0" />
+                              <span style={{ fontSize:12, color:"#888" }}>€</span>
+                            </Row>
+                          ))}
+                          <div style={{ fontSize:12, color:"#888", marginBottom:12 }}>
+                            Total saisi : <strong style={{ color: payForm.reduce((s,p)=>s+p.montant,0) === reste ? GREEN : CORAL }}>{fmtEur(payForm.reduce((s,p)=>s+p.montant,0))}</strong>
+                            {" "}/ {fmtEur(reste)}
+                          </div>
+                          <Row gap={8}>
+                            <Btn variant="success" onClick={savePayment} disabled={payForm.reduce((s,p)=>s+p.montant,0)===0}>✓ Valider</Btn>
+                            <Btn variant="ghost" onClick={() => { setSelBk(null); setPayForm([]); }}>Annuler</Btn>
+                          </Row>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // ── PLANNING TAB ───────────────────────────────────────────
+  const PlanningTab = () => {
+    const today = new Date();
+    const [curMonth, setCurMonth] = useState(today.getMonth());
+    const [curYear,  setCurYear]  = useState(today.getFullYear());
+    const prevMonth = () => { if(curMonth===0){setCurYear(y=>y-1);setCurMonth(11);}else setCurMonth(m=>m-1); };
+    const nextMonth = () => { if(curMonth===11){setCurYear(y=>y+1);setCurMonth(0);}else setCurMonth(m=>m+1); };
+
+    const firstDay = new Date(curYear, curMonth, 1);
+    const lastDay  = new Date(curYear, curMonth+1, 0);
+    let startDow = firstDay.getDay(); startDow = startDow===0?6:startDow-1;
+    const cells = Array(startDow).fill(null);
+    for(let d=1;d<=lastDay.getDate();d++) cells.push(new Date(curYear,curMonth,d));
+
+    const planning = skData?.planning || {};
+    const allSkippers = skData?.skippers || [];
+
+    return (
+      <div>
+        <Row style={{ justifyContent:"space-between", marginBottom:16 }}>
+          <button onClick={prevMonth} style={{ background:"#EBF7FA", border:"none", color:TEAL, width:38, height:38, borderRadius:19, cursor:"pointer", fontSize:18, fontWeight:700 }}>‹</button>
+          <span style={{ fontSize:18, fontWeight:800, color:TEAL }}>{MONTHS[curMonth]} {curYear}</span>
+          <button onClick={nextMonth} style={{ background:"#EBF7FA", border:"none", color:TEAL, width:38, height:38, borderRadius:19, cursor:"pointer", fontSize:18, fontWeight:700 }}>›</button>
+        </Row>
+
+        {/* Legend */}
+        <Row gap={10} style={{ marginBottom:12, flexWrap:"wrap" }}>
+          {allSkippers.map(s => (
+            <Row key={s.id} gap={5} style={{ fontSize:12, color:"#555" }}>
+              <div style={{ width:10, height:10, borderRadius:5, background:s.color, flexShrink:0 }}/>
+              {s.name}
+            </Row>
+          ))}
+          <Row gap={5} style={{ fontSize:12, color:"#aaa" }}>
+            <div style={{ width:10, height:10, borderRadius:5, background:"#ddd" }}/> Non assigné
+          </Row>
+        </Row>
+
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,minmax(0,1fr))", gap:3, marginBottom:3 }}>
+          {DAYS_SHORT.map(d => <div key={d} style={{ textAlign:"center", fontSize:10, fontWeight:700, color:"#888" }}>{d}</div>)}
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(7,minmax(0,1fr))", gap:3 }}>
+          {cells.map((cell, i) => {
+            if (!cell) return <div key={"e"+i}/>;
+            const label  = labelFromDate(cell);
+            const assign = planning[label] || {};
+            const isToday = cell.toDateString() === today.toDateString();
+            const aloesSk  = allSkippers.find(s=>s.id===assign.aloes);
+            const panaSkk  = allSkippers.find(s=>s.id===assign.panamax);
+            const isMine   = assign.aloes===skipperUser.id || assign.panamax===skipperUser.id;
+
+            return (
+              <div key={cell.toISOString()} style={{
+                background: isToday ? TEAL : isMine ? `${skipperUser.color}15` : "#fff",
+                border: isToday ? `2px solid ${TEAL}` : isMine ? `1.5px solid ${skipperUser.color}50` : "1px solid #eee",
+                borderRadius:8, padding:"4px 3px", minHeight:56, display:"flex", flexDirection:"column", alignItems:"center", gap:2
+              }}>
+                <span style={{ fontSize:11, fontWeight:isToday?800:500, color:isToday?"#fff":isMine?skipperUser.color:DARK }}>{cell.getDate()}</span>
+                {aloesSk && <div style={{ fontSize:7, background:aloesSk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🛥 {aloesSk.name}</div>}
+                {panaSkk  && <div style={{ fontSize:7, background:panaSkk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🚤 {panaSkk.name}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ marginTop:16, background:"#F0F8FB", borderRadius:12, padding:"12px 16px", border:`1px solid ${TEAL}20` }}>
+          <div style={{ fontWeight:700, color:TEAL, fontSize:13, marginBottom:8 }}>Mes prochaines sorties</div>
+          {myPlanningDates.filter(label => {
+            const d = dateFromLabel(label);
+            return d && d >= new Date(today.getFullYear(),today.getMonth(),today.getDate());
+          }).slice(0,5).map((label,i) => {
+            const assign = planning[label] || {};
+            const onAloes = assign.aloes === skipperUser.id;
+            const onPana  = assign.panamax === skipperUser.id;
+            return (
+              <Row key={i} style={{ padding:"6px 0", borderBottom:"1px solid #e8f2f7", gap:10 }}>
+                <span style={{ fontWeight:600, color:DARK, fontSize:13, flex:1 }}>{label}</span>
+                {onAloes && <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 8px", borderRadius:6, fontWeight:600 }}>🛥️ Aloès Vera</span>}
+                {onPana  && <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 8px", borderRadius:6, fontWeight:600 }}>🚤 Panamax</span>}
+              </Row>
+            );
+          })}
+          {myPlanningDates.filter(label => {
+            const d = dateFromLabel(label);
+            return d && d >= new Date(today.getFullYear(),today.getMonth(),today.getDate());
+          }).length === 0 && <div style={{ color:"#bbb", fontSize:13 }}>Aucune sortie à venir planifiée.</div>}
+        </div>
+      </div>
+    );
+  };
+
+  // ── EXCHANGE TAB ───────────────────────────────────────────
+  const ExchangeTab = () => {
+    const planning  = skData?.planning || {};
+    const allSkippers = skData?.skippers || [];
+    const otherSkipper = allSkippers.find(s => s.id !== skipperUser.id);
+    const [mySlot,    setMySlot]    = useState(null); // { label, boatKey }
+    const [theirSlot, setTheirSlot] = useState(null);
+
+    // My upcoming slots
+    const mySlots = Object.entries(planning)
+      .filter(([label, assign]) => assign?.aloes===skipperUser.id || assign?.panamax===skipperUser.id)
+      .flatMap(([label, assign]) => {
+        const slots = [];
+        if (assign.aloes===skipperUser.id)   slots.push({ label, boatKey:"aloes",   boatName:"Aloès Vera", icon:"🛥️" });
+        if (assign.panamax===skipperUser.id) slots.push({ label, boatKey:"panamax", boatName:"Panamax",    icon:"🚤" });
+        return slots;
+      })
+      .filter(s => { const d=dateFromLabel(s.label); return d && d >= new Date(); })
+      .sort((a,b) => (dateFromLabel(a.label)||new Date(0))-(dateFromLabel(b.label)||new Date(0)));
+
+    // Other skipper's upcoming slots
+    const theirSlots = otherSkipper ? Object.entries(planning)
+      .filter(([label, assign]) => assign?.aloes===otherSkipper.id || assign?.panamax===otherSkipper.id)
+      .flatMap(([label, assign]) => {
+        const slots = [];
+        if (assign.aloes===otherSkipper.id)   slots.push({ label, boatKey:"aloes",   boatName:"Aloès Vera", icon:"🛥️" });
+        if (assign.panamax===otherSkipper.id) slots.push({ label, boatKey:"panamax", boatName:"Panamax",    icon:"🚤" });
+        return slots;
+      })
+      .filter(s => { const d=dateFromLabel(s.label); return d && d >= new Date(); })
+      .sort((a,b) => (dateFromLabel(a.label)||new Date(0))-(dateFromLabel(b.label)||new Date(0)))
+      : [];
+
+    const SlotBtn = ({slot, selected, onSelect, color}) => (
+      <button onClick={()=>onSelect(slot)}
+        style={{ width:"100%", textAlign:"left", padding:"10px 14px", borderRadius:10, border:`2px solid ${selected?color:"#ddd"}`, background:selected?`${color}15`:"#fff", cursor:"pointer", marginBottom:6 }}>
+        <Row>
+          <span style={{ fontSize:14 }}>{slot.icon}</span>
+          <div style={{ marginLeft:8, flex:1 }}>
+            <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{slot.label}</div>
+            <div style={{ fontSize:11, color:"#888" }}>{slot.boatName}</div>
+          </div>
+          {selected && <span style={{ fontSize:16, color }}>✓</span>}
+        </Row>
+      </button>
+    );
+
+    return (
+      <div>
+        <div style={{ background:"#FFF8EE", borderRadius:12, padding:"12px 16px", marginBottom:16, border:`1px solid ${ORANGE}30`, fontSize:13, color:"#666", lineHeight:1.6 }}>
+          💡 Sélectionnez un de vos créneaux et un créneau de {otherSkipper?.name||"l'autre skipper"} pour les échanger. L'échange est <strong>immédiat et définitif</strong>.
+        </div>
+
+        <Grid cols="1fr 1fr" gap={12}>
+          <div>
+            <div style={{ fontWeight:700, color:skipperUser.color, fontSize:13, marginBottom:8 }}>
+              <div style={{ width:10, height:10, borderRadius:5, background:skipperUser.color, display:"inline-block", marginRight:6 }}/>
+              Mes créneaux
+            </div>
+            {mySlots.length===0 && <div style={{ color:"#bbb", fontSize:12 }}>Aucun créneau à venir</div>}
+            {mySlots.map((slot,i) => <SlotBtn key={i} slot={slot} selected={mySlot?.label===slot.label&&mySlot?.boatKey===slot.boatKey} onSelect={setMySlot} color={skipperUser.color} />)}
+          </div>
+          <div>
+            <div style={{ fontWeight:700, color:otherSkipper?.color||"#888", fontSize:13, marginBottom:8 }}>
+              <div style={{ width:10, height:10, borderRadius:5, background:otherSkipper?.color||"#888", display:"inline-block", marginRight:6 }}/>
+              Créneaux de {otherSkipper?.name||"—"}
+            </div>
+            {theirSlots.length===0 && <div style={{ color:"#bbb", fontSize:12 }}>Aucun créneau disponible</div>}
+            {theirSlots.map((slot,i) => <SlotBtn key={i} slot={slot} selected={theirSlot?.label===slot.label&&theirSlot?.boatKey===slot.boatKey} onSelect={setTheirSlot} color={otherSkipper?.color||"#888"} />)}
+          </div>
+        </Grid>
+
+        {mySlot && theirSlot && (
+          <div style={{ background:"#F0F8FB", borderRadius:12, padding:16, marginTop:16, border:`1px solid ${TEAL}30` }}>
+            <div style={{ fontWeight:700, color:TEAL, marginBottom:12 }}>Confirmer l'échange</div>
+            <Row style={{ gap:10, marginBottom:14, flexWrap:"wrap", justifyContent:"center" }}>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:11, color:"#aaa", marginBottom:4 }}>Mon créneau</div>
+                <div style={{ fontWeight:700, color:skipperUser.color }}>{mySlot.icon} {mySlot.label}</div>
+                <div style={{ fontSize:11, color:"#888" }}>{mySlot.boatName}</div>
+              </div>
+              <span style={{ fontSize:24, color:"#ccc" }}>⇄</span>
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:11, color:"#aaa", marginBottom:4 }}>Créneau de {otherSkipper?.name}</div>
+                <div style={{ fontWeight:700, color:otherSkipper?.color }}>{theirSlot.icon} {theirSlot.label}</div>
+                <div style={{ fontSize:11, color:"#888" }}>{theirSlot.boatName}</div>
+              </div>
+            </Row>
+            <Btn full variant="success" onClick={() => doExchange(mySlot.label, mySlot.boatKey, theirSlot.label, theirSlot.boatKey)} style={{ padding:12 }}>
+              ✓ Confirmer l'échange
+            </Btn>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ── MAIN RENDER ────────────────────────────────────────────
+  return (
+    <div style={{ minHeight:"100vh", background:"#EBF7FA", fontFamily:"'Segoe UI',system-ui,sans-serif" }}>
+      {/* Header */}
+      <div style={{ background:`linear-gradient(135deg,${DARK},${TEAL})`, color:"#fff", padding:"0 16px", height:56, display:"flex", alignItems:"center", gap:10, position:"sticky", top:0, zIndex:100 }}>
+        <span style={{ fontSize:22 }}>⚓</span>
+        <div>
+          <div style={{ fontSize:15, fontWeight:700 }}>Skipper</div>
+          <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)" }}>{skipperUser.name}</div>
+        </div>
+        <div style={{ marginLeft:"auto", display:"flex", gap:4 }}>
+          {[["today","📅 Aujourd'hui"],["planning","🗓️ Planning"],["exchange","🔄 Échange"]].map(([v,lbl])=>(
+            <button key={v} onClick={()=>setTab(v)}
+              style={{ background:tab===v?"rgba(255,255,255,0.2)":"transparent", color:tab===v?"#fff":"rgba(255,255,255,0.55)", border:"none", borderRadius:20, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:tab===v?700:400 }}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ maxWidth:700, margin:"0 auto", padding:"14px 14px 80px" }}>
+        {tab === "today"    && <TodayTab />}
+        {tab === "planning" && <PlanningTab />}
+        {tab === "exchange" && <ExchangeTab />}
+      </div>
+
+      {notif && <div style={{ position:"fixed", bottom:22, left:"50%", transform:"translateX(-50%)", background:notif.ok?TEAL:CORAL, color:"#fff", padding:"10px 24px", borderRadius:28, fontSize:14, fontWeight:600, zIndex:9999, whiteSpace:"nowrap" }}>{notif.msg}</div>}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
 // PIN GATE
 // ════════════════════════════════════════════════════════════════
 function PinGate({ onUnlock }) {
@@ -2562,8 +3330,9 @@ function PinGate({ onUnlock }) {
 // ROOT
 // ════════════════════════════════════════════════════════════════
 export default function Root() {
-  const { data, save, sources, saveSources, loading, reload } = useData();
+  const { data, save, sources, saveSources, skData, saveSkData, loading, reload } = useData();
   const [mode, setMode] = useState("reseller");
+  const [skipperUser, setSkipperUser] = useState(null); // logged-in skipper
 
   if (loading) return (
     <div style={{ minHeight: "100vh", background: DARK, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: "system-ui", gap: 16 }}>
@@ -2585,12 +3354,33 @@ export default function Root() {
         </div>
       )}
       {mode === "admin-gate" && <PinGate onUnlock={() => setMode("admin")} />}
-      {mode === "admin"      && <AdminView data={data} save={save} sources={sources} saveSources={saveSources} reload={reload} />}
+      {mode === "admin"      && <AdminView data={data} save={save} sources={sources} saveSources={saveSources} skData={skData} saveSkData={saveSkData} reload={reload} />}
 
-      <div style={{ position: "fixed", bottom: 120, right: 14, zIndex: 200 }}>
+      {/* Skipper gate */}
+      {mode === "skipper-gate" && (
+        <SkipperGate skData={skData} onLogin={(sk) => { setSkipperUser(sk); setMode("skipper"); }} onCancel={() => setMode("reseller")} />
+      )}
+      {/* Skipper view */}
+      {mode === "skipper" && skipperUser && (
+        <SkipperView data={data} save={save} skData={skData} saveSkData={saveSkData} skipperUser={skipperUser} onLogout={() => { setSkipperUser(null); setMode("reseller"); }} />
+      )}
+
+      {/* Nav buttons */}
+      <div style={{ position: "fixed", bottom: 16, right: 14, zIndex: 200, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+        {mode === "reseller" && (
+          <button onClick={() => setMode("skipper-gate")}
+            style={{ background: "rgba(0,0,0,0.25)", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.35, padding: "5px 12px", borderRadius: 20, color: "#fff", fontWeight: 600 }}>
+            ⚓
+          </button>
+        )}
+        {mode === "skipper" && (
+          <button onClick={() => { setSkipperUser(null); setMode("reseller"); }}
+            style={{ background: "rgba(13,61,82,0.85)", border: "none", cursor: "pointer", fontSize: 12, padding: "6px 14px", borderRadius: 20, color: "#fff", fontWeight: 700 }}>
+            ← Portail
+          </button>
+        )}
         <button onClick={() => mode === "admin" ? setMode("reseller") : setMode("admin-gate")}
-          style={{ background: mode === "admin" ? "rgba(13,61,82,0.85)" : "none", border: "none", cursor: "pointer", fontSize: mode === "admin" ? 13 : 16, opacity: mode === "admin" ? 0.9 : 0.25, padding: mode === "admin" ? "6px 12px" : 4, lineHeight: 1, borderRadius: 20, color: "#fff", fontWeight: 600 }}
-          title={mode === "admin" ? "Retour portail" : "Admin"}>
+          style={{ background: mode === "admin" ? "rgba(13,61,82,0.85)" : "none", border: "none", cursor: "pointer", fontSize: mode === "admin" ? 13 : 16, opacity: mode === "admin" ? 0.9 : 0.2, padding: mode === "admin" ? "6px 12px" : 4, lineHeight: 1, borderRadius: 20, color: "#fff", fontWeight: 600 }}>
           {mode === "admin" ? "← Portail" : "🐟"}
         </button>
       </div>
