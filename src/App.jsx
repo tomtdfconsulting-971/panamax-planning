@@ -59,6 +59,14 @@ function validatePhone(prefix, number) {
 
 // ── Utils ──────────────────────────────────────────────────────
 const uid      = () => Math.random().toString(36).slice(2, 9);
+const fullPhone = (bk) => {
+  if (!bk.phone) return null;
+  const digits = bk.phone.replace(/[^0-9]/g, "");
+  const prefix = (bk.phone_prefix || "+33").replace("+", "");
+  // Remove leading 0 if present (e.g. 0612... → 612...)
+  const clean = digits.startsWith("0") ? digits.slice(1) : digits;
+  return `+${prefix}${clean}`;
+};
 const boatPax  = b  => b.bookings.reduce((s, bk) => s + bk.adults + bk.children, 0);
 const boatRev  = b  => b.bookings.reduce((s, bk) => s + bk.price, 0);
 const fmtEur   = n  => n.toLocaleString("fr") + "€";
@@ -679,7 +687,13 @@ function ResellerPortal({ data, save }) {
                 <div style={{ fontSize: 13, color: "#444", lineHeight: 1.9, marginBottom: 12 }}>
                   <div>👤 <strong>{p.name}</strong></div>
                   <div>👥 {p.children ? `${p.adults} adulte(s) + ${p.children} enfant(s)` : `${p.adults} adulte(s)`}</div>
-                  {p.phone && <div>📞 {p.phone_prefix||""}{p.phone}</div>}
+                  {p.phone && (()=>{const tel=fullPhone(p);const wa=tel.replace(/[^0-9]/g,"");return(<>
+                  <div style={{fontSize:13,color:"#555"}}>📞 {p.phone_prefix||""}{p.phone}</div>
+                  <Row gap={8} style={{marginTop:5}}>
+                    <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" style={{background:"#25D366",color:"#fff",borderRadius:8,padding:"6px 14px",textDecoration:"none",fontSize:12,fontWeight:700}}>WhatsApp</a>
+                    <a href={`tel:${tel}`} style={{background:TEAL,color:"#fff",borderRadius:8,padding:"6px 14px",textDecoration:"none",fontSize:12,fontWeight:700}}>Appeler</a>
+                  </Row>
+                </>);})()}
                   {p.notes && <div>📝 {p.notes}</div>}
                   {p.discount > 0 && <div style={{ color: GREEN, fontSize: 12 }}>Remise : -{fmtEur(p.discount)}</div>}
                   {p.acompte_amount > 0 && <div style={{ color: "#888", fontSize: 12 }}>Acompte : {fmtEur(p.acompte_amount)} · Reste à payer : <strong style={{ color: CORAL }}>{fmtEur(Math.max(0,p.price-(p.acompte_amount||0)))}</strong></div>}
@@ -1841,13 +1855,31 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   {/* Infos client */}
                   <div>
                     <div style={{ fontWeight: 700, color: DARK, fontSize: 14, marginBottom: 4 }}>{bk.name}</div>
-                    <Row gap={16} style={{ flexWrap: "wrap", marginBottom: 4 }}>
+                    <Row gap={16} style={{ flexWrap: "wrap", marginBottom: 6 }}>
                       <span style={{ fontSize: 13, color: "#555" }}>
                         👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
                       </span>
                       {bk.phone && <span style={{ fontSize: 13, color: "#888" }}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
                       {bk.email && <span style={{ fontSize: 13, color: "#888" }}>✉️ {bk.email}</span>}
                     </Row>
+                    {bk.phone && (() => {
+                      const tel = fullPhone(bk);
+                      const waNum = tel.replace(/[^0-9]/g,"");
+                      return (
+                        <Row gap={8} style={{ marginBottom: 4 }}>
+                          <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer"
+                            style={{ display:"flex", alignItems:"center", gap:5, background:"#25D366", color:"#fff", borderRadius:8, padding:"6px 14px", textDecoration:"none", fontSize:12, fontWeight:700, flexShrink:0 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                            WhatsApp
+                          </a>
+                          <a href={`tel:${tel}`}
+                            style={{ display:"flex", alignItems:"center", gap:5, background:"#1A5F7A", color:"#fff", borderRadius:8, padding:"6px 14px", textDecoration:"none", fontSize:12, fontWeight:700, flexShrink:0 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                            Appeler
+                          </a>
+                        </Row>
+                      );
+                    })()}
                     {bk.notes && (
                       <div style={{ fontSize: 12, color: "#777", fontStyle: "italic", background: "#F8FBFC", borderRadius: 6, padding: "5px 10px", border: "1px solid #eee", marginTop: 4 }}>
                         📝 {bk.notes}
@@ -1993,6 +2025,10 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                                 <span style={{ color:"#888" }}>{bk.children?`${bk.adults}+${bk.children}`:bk.adults} pax</span>
                                 {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
                               {bk.email&&<span style={{ color:"#aaa", fontSize:10 }}>✉️ {bk.email}</span>}
+                              {bk.phone&&(()=>{const tel=fullPhone(bk);const wa=tel.replace(/[^0-9]/g,"");return(<Row gap={4} style={{marginTop:2}}>
+                                <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" style={{background:"#25D366",color:"#fff",borderRadius:5,padding:"2px 7px",textDecoration:"none",fontSize:9,fontWeight:700}}>WhatsApp</a>
+                                <a href={`tel:${tel}`} style={{background:TEAL,color:"#fff",borderRadius:5,padding:"2px 7px",textDecoration:"none",fontSize:9,fontWeight:700}}>Appeler</a>
+                              </Row>);})()}
                                 <span style={{ fontWeight:700, color:bk.price===0?ORANGE:srcColor }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
                                 {bk.acompte_amount>0&&<span style={{ fontSize:9, color:"#888" }}>Acpt:{fmtEur(bk.acompte_amount)}</span>}
                               </Row>
