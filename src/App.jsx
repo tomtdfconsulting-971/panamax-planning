@@ -286,9 +286,9 @@ function ResellerPortal({ data, save }) {
   const [editForm,       setEditForm]      = useState({ ...BLANK });
   const [delPending,     setDelPending]    = useState(null);
   const [identity,       setIdentity]      = useState(null); // source key of identified reseller
-  const [viewMode,  setViewMode]  = useState("month"); // "month" | "week"
+  const [viewMode,  setViewMode]  = useState("week"); // "month" | "week"
   const [weekStart, setWeekStart] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - (d.getDay()||7) + 1); d.setHours(0,0,0,0); return d;
+    const d = new Date(); d.setHours(0,0,0,0); return d; // Start from today
   });
 
   const reset = () => { setStep("cal"); setSelDate(null); setSelBoat(null); setForm({ ...BLANK }); };
@@ -461,6 +461,9 @@ function ResellerPortal({ data, save }) {
           </Grid>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <FInput label="Email client" type="email" value={form.email||""} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemple.com" />
           </div>
           <div style={{ marginBottom: 16 }}>
             <Label>Notes (optionnel)</Label>
@@ -637,6 +640,9 @@ function ResellerPortal({ data, save }) {
           </Grid>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <FInput label="Email client" type="email" value={editForm.email||""} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemple.com" />
           </div>
           <div style={{ marginBottom: 22 }}>
             <Label>Notes (optionnel)</Label>
@@ -1071,7 +1077,7 @@ function StatsTab({ data, sources: srcMap }) {
 
   // ── CSV Export ────────────────────────────────────────────
   const exportCSV = () => {
-    const headers = ["Date","Bateau","Référent","Nom client","Adultes","Enfants","Téléphone","Prix","Acompte","Notes"];
+    const headers = ["Date","Bateau","Référent","Nom client","Adultes","Enfants","Téléphone","Email","Prix","Acompte","Notes"];
     const rows = filtered.map(bk => [
       bk.dateLabel,
       bk.boatName,
@@ -1080,6 +1086,7 @@ function StatsTab({ data, sources: srcMap }) {
       bk.adults,
       bk.children,
       bk.phone || "",
+      bk.email || "",
       bk.price + "€",
       bk.acompte === "oui" ? "Oui" : bk.acompte === "non" ? "Non" : "",
       (bk.notes || "").replace(/,/g, ";"),
@@ -1193,6 +1200,7 @@ function StatsTab({ data, sources: srcMap }) {
               <div style={{ fontSize: 11, color: "#888" }}>
                 📅 {bk.dateLabel} · 👥 {bk.children ? `${bk.adults}+${bk.children}` : bk.adults} pax
                 {bk.phone && ` · 📞 ${bk.phone}`}
+                {bk.email && ` · ✉️ ${bk.email}`}
               </div>
               {bk.notes && <div style={{ fontSize: 11, color: "#999", fontStyle: "italic", marginTop: 2 }}>📝 {bk.notes}</div>}
               {bk.acompte && (
@@ -1470,9 +1478,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const [delDate,  setDelDate]  = useState(null);
   const [adminStep, setAdminStep] = useState("day"); // "day" | "add-form" | "edit-form"
   const [addBoat,   setAddBoat]   = useState(null);  // boat selected for add
-  const [viewMode,  setViewMode]  = useState("month"); // "month" | "week"
+  const [viewMode,  setViewMode]  = useState("week"); // "month" | "week"
   const [weekStart, setWeekStart] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - (d.getDay()||7) + 1); d.setHours(0,0,0,0); return d;
+    const d = new Date(); d.setHours(0,0,0,0); return d; // Start from today
   });
 
   const prevMonth = () => { if (month === 0) { setYear(y => y-1); setMonth(11); } else setMonth(m => m-1); };
@@ -1535,6 +1543,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         </Grid>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Nom du client" value={adding.form.name} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <FInput label="Email client" type="email" value={adding.form.email||""} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, email: e.target.value } }))} placeholder="email@exemple.com" />
         </div>
         <div style={{ marginBottom: 14 }}>
           <Label>Notes (optionnel)</Label>
@@ -1609,6 +1620,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         </Grid>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Nom du client" value={editing.form.name} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <FInput label="Email client" type="email" value={editing.form.email||""} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, email: e.target.value } }))} placeholder="email@exemple.com" />
         </div>
         <div style={{ marginBottom: 14 }}>
           <Label>Notes (optionnel)</Label>
@@ -1745,6 +1759,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                         👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
                       </span>
                       {bk.phone && <span style={{ fontSize: 13, color: "#888" }}>📞 {bk.phone}</span>}
+                      {bk.email && <span style={{ fontSize: 13, color: "#888" }}>✉️ {bk.email}</span>}
                     </Row>
                     {bk.notes && (
                       <div style={{ fontSize: 12, color: "#777", fontStyle: "italic", background: "#F8FBFC", borderRadius: 6, padding: "5px 10px", border: "1px solid #eee", marginTop: 4 }}>
@@ -1890,7 +1905,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                                 <span style={{ fontSize:10 }}>{bk.boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
                                 <span style={{ fontWeight:600, flex:1 }}>{bk.name}</span>
                                 <span style={{ color:"#888" }}>{bk.children?`${bk.adults}+${bk.children}`:bk.adults} pax</span>
-                                {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>{bk.phone}</span>}
+                                {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>📞 {bk.phone}</span>}
+                              {bk.email&&<span style={{ color:"#aaa", fontSize:10 }}>✉️ {bk.email}</span>}
                                 <span style={{ fontWeight:700, color:bk.price===0?ORANGE:srcColor }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
                                 {bk.acompte&&<span style={{ fontSize:10, fontWeight:700, color:bk.acompte==="oui"?GREEN:CORAL }}>{bk.acompte==="oui"?"✅":"❌"}</span>}
                               </Row>
