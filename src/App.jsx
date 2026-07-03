@@ -29,6 +29,34 @@ const DEFAULT_SOURCES = {
 // SOURCES is a module-level variable, updated by useData hook
 let SOURCES = { ...DEFAULT_SOURCES };
 
+// ── Phone prefixes & validation ───────────────────────────────
+const PHONE_PREFIXES = [
+  { code: "+590", flag: "🇬🇵", label: "Guadeloupe",     len: [9],       ex: "690 62 71 22" },
+  { code: "+596", flag: "🇲🇶", label: "Martinique",     len: [9],       ex: "696 00 00 00" },
+  { code: "+33",  flag: "🇫🇷", label: "France",         len: [9],       ex: "6 12 34 56 78" },
+  { code: "+32",  flag: "🇧🇪", label: "Belgique",       len: [8,9,10],  ex: "470 12 34 56" },
+  { code: "+41",  flag: "🇨🇭", label: "Suisse",         len: [9],       ex: "79 123 45 67" },
+  { code: "+1",   flag: "🇺🇸", label: "USA/Canada",     len: [10],      ex: "514 123 4567" },
+  { code: "+44",  flag: "🇬🇧", label: "Royaume-Uni",    len: [10],      ex: "7911 123456" },
+  { code: "+49",  flag: "🇩🇪", label: "Allemagne",      len: [10,11],   ex: "151 12345678" },
+  { code: "+31",  flag: "🇳🇱", label: "Pays-Bas",       len: [9],       ex: "6 12345678" },
+  { code: "+39",  flag: "🇮🇹", label: "Italie",         len: [9,10],    ex: "312 345 6789" },
+  { code: "+34",  flag: "🇪🇸", label: "Espagne",        len: [9],       ex: "612 345 678" },
+  { code: "+351", flag: "🇵🇹", label: "Portugal",       len: [9],       ex: "912 345 678" },
+  { code: "+974", flag: "🇶🇦", label: "Qatar",          len: [8],       ex: "5012 3456" },
+  { code: "+971", flag: "🇦🇪", label: "Émirats",        len: [9],       ex: "50 123 4567" },
+  { code: "+61",  flag: "🇦🇺", label: "Australie",      len: [9],       ex: "412 345 678" },
+  { code: "+55",  flag: "🇧🇷", label: "Brésil",         len: [10,11],   ex: "11 91234-5678" },
+];
+
+function validatePhone(prefix, number) {
+  const digits = number.replace(/[^0-9]/g, "");
+  if (!digits) return null; // empty = ok (optional field)
+  const found = PHONE_PREFIXES.find(p => p.code === prefix);
+  if (!found) return true;
+  return found.len.includes(digits.length);
+}
+
 // ── Utils ──────────────────────────────────────────────────────
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const boatPax  = b  => b.bookings.reduce((s, bk) => s + bk.adults + bk.children, 0);
@@ -211,6 +239,35 @@ const Counter = ({ label, value, onChange, min = 0, max = 12, sublabel }) => (
 const inputStyle = { width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff" };
 
 const FInput  = ({ label, ...p }) => <div><Label>{label}</Label><input  style={inputStyle} {...p} /></div>;
+
+// Phone input with prefix selector + validation
+const PhoneInput = ({ label="Téléphone client", prefixKey, onPrefixChange, value, onChange }) => {
+  const isValid = validatePhone(prefixKey, value);
+  const isInvalid = isValid === false; // false = invalid, null = empty (ok)
+  const found = PHONE_PREFIXES.find(p => p.code === prefixKey) || PHONE_PREFIXES[0];
+  return (
+    <div>
+      {label && <Label>{label}</Label>}
+      <div style={{ display:"flex", gap:0, border:`1.5px solid ${isInvalid ? CORAL : "#ddd"}`, borderRadius:7, overflow:"hidden", background:"#fff" }}>
+        <select value={prefixKey} onChange={e => onPrefixChange(e.target.value)}
+          style={{ border:"none", background:"#F8FBFC", padding:"8px 6px", fontSize:12, cursor:"pointer", flexShrink:0, outline:"none", color:DARK, fontWeight:600 }}>
+          {PHONE_PREFIXES.map(p => (
+            <option key={p.code} value={p.code}>{p.flag} {p.code}</option>
+          ))}
+        </select>
+        <div style={{ width:1, background:"#eee", flexShrink:0 }}/>
+        <input type="tel" value={value} onChange={e => onChange(e.target.value)}
+          placeholder={found.ex}
+          style={{ border:"none", padding:"8px 10px", fontSize:13, flex:1, outline:"none", background:"transparent", minWidth:0 }} />
+      </div>
+      {isInvalid && (
+        <div style={{ fontSize:11, color:CORAL, marginTop:3, display:"flex", alignItems:"center", gap:4 }}>
+          ⚠️ Numéro invalide pour {found.flag} {found.label} ({found.len.join(" ou ")} chiffres attendus)
+        </div>
+      )}
+    </div>
+  );
+};
 const FSelect = ({ label, children, ...p }) => <div><Label>{label}</Label><select style={inputStyle} {...p}>{children}</select></div>;
 
 // Capacity bar (used in admin)
@@ -230,7 +287,7 @@ const CapBar = ({ boat }) => {
 };
 
 // Booking form (used in admin and reseller)
-const BLANK = { adults: 2, children: 0, name: "", source: "", phone: "", price: P_AD * 2, notes: "", acompte: null };
+const BLANK = { adults: 2, children: 0, name: "", source: "", phone_prefix: "+33", phone: "", email: "", price: P_AD * 2, notes: "", acompte: null };
 
 function BookingForm({ form, set, onSave, onCancel, title, admin }) {
   const upd = (k, v) => set(f => ({ ...f, [k]: v }));
@@ -457,7 +514,7 @@ function ResellerPortal({ data, save }) {
               ><option value="">— Sélectionner —</option>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
-            <FInput label="Téléphone client" value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} placeholder="+33..." />
+            <PhoneInput prefixKey={form.phone_prefix||"+33"} onPrefixChange={v=>setForm(f=>({...f,phone_prefix:v}))} value={form.phone} onChange={v=>setForm(f=>({...f,phone:v}))} />
           </Grid>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
@@ -573,7 +630,7 @@ function ResellerPortal({ data, save }) {
                 <div style={{ fontSize: 13, color: "#444", lineHeight: 1.9, marginBottom: 12 }}>
                   <div>👤 <strong>{p.name}</strong></div>
                   <div>👥 {p.children ? `${p.adults} adulte(s) + ${p.children} enfant(s)` : `${p.adults} adulte(s)`}</div>
-                  {p.phone && <div>📞 {p.phone}</div>}
+                  {p.phone && <div>📞 {p.phone_prefix||""}{p.phone}</div>}
                   {p.notes && <div>📝 {p.notes}</div>}
                   {p.acompte && <div style={{ fontWeight: 700, color: p.acompte === "oui" ? GREEN : CORAL }}>{p.acompte === "oui" ? "✅ Acompte encaissé" : "❌ Acompte non encaissé"}</div>}
                   <div style={{ color: TEAL, fontWeight: 700 }}>💰 {fmtEur(p.adults * P_AD + p.children * P_CH)}</div>
@@ -636,7 +693,7 @@ function ResellerPortal({ data, save }) {
               ><option value="">— Sélectionner —</option>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
-            <FInput label="Téléphone client" value={editForm.phone} onChange={e => setEditForm(f => ({ ...f, phone: e.target.value }))} placeholder="+33..." />
+            <PhoneInput prefixKey={editForm.phone_prefix||"+33"} onPrefixChange={v=>setEditForm(f=>({...f,phone_prefix:v}))} value={editForm.phone} onChange={v=>setEditForm(f=>({...f,phone:v}))} />
           </Grid>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
@@ -1085,7 +1142,7 @@ function StatsTab({ data, sources: srcMap }) {
       bk.name,
       bk.adults,
       bk.children,
-      bk.phone || "",
+      bk.phone ? `${bk.phone_prefix||""}${bk.phone}` : "",
       bk.email || "",
       bk.price + "€",
       bk.acompte === "oui" ? "Oui" : bk.acompte === "non" ? "Non" : "",
@@ -1199,7 +1256,7 @@ function StatsTab({ data, sources: srcMap }) {
               <div style={{ fontWeight: 700, color: DARK, fontSize: 13, marginBottom: 2 }}>{bk.name}</div>
               <div style={{ fontSize: 11, color: "#888" }}>
                 📅 {bk.dateLabel} · 👥 {bk.children ? `${bk.adults}+${bk.children}` : bk.adults} pax
-                {bk.phone && ` · 📞 ${bk.phone}`}
+                {bk.phone && ` · 📞 ${bk.phone_prefix||""}${bk.phone}`}
                 {bk.email && ` · ✉️ ${bk.email}`}
               </div>
               {bk.notes && <div style={{ fontSize: 11, color: "#999", fontStyle: "italic", marginTop: 2 }}>📝 {bk.notes}</div>}
@@ -1539,7 +1596,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <FSelect label="Référent(e)" value={adding.form.source} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </FSelect>
-          <FInput label="Téléphone" value={adding.form.phone} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, phone: e.target.value } }))} placeholder="+33..." />
+          <PhoneInput prefixKey={adding.form.phone_prefix||"+33"} onPrefixChange={v=>setAdding(a=>({...a,form:{...a.form,phone_prefix:v}}))} value={adding.form.phone} onChange={v=>setAdding(a=>({...a,form:{...a.form,phone:v}}))} />
         </Grid>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Nom du client" value={adding.form.name} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
@@ -1616,7 +1673,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <FSelect label="Référent(e)" value={editing.form.source} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </FSelect>
-          <FInput label="Téléphone" value={editing.form.phone} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, phone: e.target.value } }))} placeholder="+33..." />
+          <PhoneInput prefixKey={editing.form.phone_prefix||"+33"} onPrefixChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone_prefix:v}}))} value={editing.form.phone} onChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone:v}}))} />
         </Grid>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Nom du client" value={editing.form.name} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
@@ -1758,7 +1815,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                       <span style={{ fontSize: 13, color: "#555" }}>
                         👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
                       </span>
-                      {bk.phone && <span style={{ fontSize: 13, color: "#888" }}>📞 {bk.phone}</span>}
+                      {bk.phone && <span style={{ fontSize: 13, color: "#888" }}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
                       {bk.email && <span style={{ fontSize: 13, color: "#888" }}>✉️ {bk.email}</span>}
                     </Row>
                     {bk.notes && (
@@ -1905,7 +1962,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                                 <span style={{ fontSize:10 }}>{bk.boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
                                 <span style={{ fontWeight:600, flex:1 }}>{bk.name}</span>
                                 <span style={{ color:"#888" }}>{bk.children?`${bk.adults}+${bk.children}`:bk.adults} pax</span>
-                                {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>📞 {bk.phone}</span>}
+                                {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
                               {bk.email&&<span style={{ color:"#aaa", fontSize:10 }}>✉️ {bk.email}</span>}
                                 <span style={{ fontWeight:700, color:bk.price===0?ORANGE:srcColor }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
                                 {bk.acompte&&<span style={{ fontSize:10, fontWeight:700, color:bk.acompte==="oui"?GREEN:CORAL }}>{bk.acompte==="oui"?"✅":"❌"}</span>}
