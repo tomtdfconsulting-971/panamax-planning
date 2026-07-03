@@ -852,7 +852,7 @@ function ResellerPortal({ data, save }) {
                           <Row style={{ marginBottom:4 }}>
                             <span style={{ fontSize:14 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
                             <span style={{ fontSize:13, fontWeight:700, color:"#fff", flex:1, marginLeft:6 }}>{boat.name==="Aloes Vera"?"Aloès Vera":"Panamax"}</span>
-                            <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":"#FA9F6A" }}>{r<=0?"Complet":`R${r}`}</span>
+                            <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":"#FA9F6A" }}>{r<=0?"Complet 🚫":`Reste ${r} place${r>1?"s":""}`}</span>
                           </Row>
                           <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.15)", overflow:"hidden" }}>
                             <div style={{ height:"100%", width:`${p}%`, background:isPast?"rgba(255,255,255,0.2)":bc, borderRadius:2 }}/>
@@ -958,6 +958,280 @@ function ResellerPortal({ data, save }) {
           Tarifs : {P_AD}€/adulte · {P_CH}€/enfant.
         </div>
       </div>
+      </>)}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// COMPTABILITÉ TAB
+// ════════════════════════════════════════════════════════════════
+function ComptaTab({ data, sources: srcMap }) {
+  const today = new Date();
+  const fmt = (d) => d.toISOString().slice(0,10);
+  const [dateFrom, setDateFrom] = useState(fmt(new Date(today.getFullYear(), today.getMonth(), 1)));
+  const [dateTo,   setDateTo]   = useState(fmt(today));
+  const [view,     setView]     = useState("synthese"); // synthese | detail | skippers
+
+  const S = srcMap || SOURCES;
+  const srcLabel = (s) => S[s]?.label || s || "?";
+  const srcColor = (s) => S[s]?.color || "#999";
+
+  // Filter all bookings by date range
+  const from = new Date(dateFrom + "T00:00:00");
+  const to   = new Date(dateTo   + "T23:59:59");
+
+  const allBk = [];
+  const workDays = {}; // dateLabel → {aloes: bool, panamax: bool, pax, rev}
+
+  for (const date of data.dates) {
+    const d = dateFromLabel(date.label);
+    if (!d || d < from || d > to) continue;
+
+    const dayKey = date.label;
+    if (!workDays[dayKey]) workDays[dayKey] = { label: dayKey, date: d, aloes: false, panamax: false, pax: 0, rev: 0, bkCount: 0 };
+
+    for (const boat of date.boats) {
+      const isAloes = boat.name === "Aloes Vera";
+      if (boat.bookings.length > 0) {
+        if (isAloes) workDays[dayKey].aloes = true;
+        else         workDays[dayKey].panamax = true;
+      }
+      for (const bk of boat.bookings) {
+        workDays[dayKey].pax += bk.adults + bk.children;
+        workDays[dayKey].rev += bk.price;
+        workDays[dayKey].bkCount++;
+        allBk.push({ ...bk, dateLabel: date.label, dateObj: d, boatName: boat.name });
+      }
+    }
+  }
+
+  // Aggregates
+  const totalRev      = allBk.reduce((s,b) => s + b.price, 0);
+  const totalPax      = allBk.reduce((s,b) => s + b.adults + b.children, 0);
+  const totalAdults   = allBk.reduce((s,b) => s + b.adults, 0);
+  const totalChildren = allBk.reduce((s,b) => s + b.children, 0);
+  const totalDiscount = allBk.reduce((s,b) => s + (b.discount||0), 0);
+  const totalAcompte  = allBk.reduce((s,b) => s + (b.acompte_amount||0), 0);
+  const totalReste    = allBk.reduce((s,b) => s + Math.max(0, b.price - (b.acompte_amount||0)), 0);
+  const baseRev       = totalAdults * P_AD + totalChildren * P_CH;
+  const workDaysList  = Object.values(workDays).sort((a,b) => a.date-b.date);
+  const daysAloes     = workDaysList.filter(d => d.aloes).length;
+  const daysPanamax   = workDaysList.filter(d => d.panamax).length;
+  const daysTotal     = workDaysList.filter(d => d.aloes || d.panamax).length;
+
+  // By source
+  const bySource = {};
+  for (const bk of allBk) {
+    const s = bk.source || "autre";
+    if (!bySource[s]) bySource[s] = { count:0, pax:0, rev:0, discount:0 };
+    bySource[s].count++;
+    bySource[s].pax += bk.adults + bk.children;
+    bySource[s].rev += bk.price;
+    bySource[s].discount += bk.discount||0;
+  }
+
+  // By boat
+  const byBoat = { "Aloes Vera": {pax:0,rev:0,days:daysAloes}, "Panamax": {pax:0,rev:0,days:daysPanamax} };
+  for (const bk of allBk) {
+    const bn = bk.boatName === "Aloes Vera" ? "Aloes Vera" : "Panamax";
+    byBoat[bn].pax += bk.adults + bk.children;
+    byBoat[bn].rev += bk.price;
+  }
+
+  // CSV export
+  const exportCSV = (rows, headers, filename) => {
+    const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF"+csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href=url; a.download=filename; a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportDetail = () => {
+    const headers = ["Date","Bateau","Référent","Nom client","Adultes","Enfants","Tél","Email","Prix brut","Remise","Prix net","Acompte","Reste à payer","Notes"];
+    const rows = allBk.map(bk => [
+      bk.dateLabel,
+      bk.boatName === "Aloes Vera" ? "Aloès Vera" : "Panamax",
+      srcLabel(bk.source),
+      bk.name,
+      bk.adults, bk.children,
+      bk.phone ? `${bk.phone_prefix||""}${bk.phone}` : "",
+      bk.email||"",
+      bk.adults*P_AD+bk.children*P_CH,
+      bk.discount||0,
+      bk.price,
+      bk.acompte_amount||0,
+      Math.max(0,bk.price-(bk.acompte_amount||0)),
+      (bk.notes||"").replace(/"/g,"'"),
+    ]);
+    exportCSV(rows, headers, `panamax-detail-${dateFrom}-${dateTo}.csv`);
+  };
+
+  const exportSynthese = () => {
+    const headers = ["Date","Aloès Vera","Panamax","Réservations","Passagers","CA (€)"];
+    const rows = workDaysList.map(d => [d.label, d.aloes?"✓":"", d.panamax?"✓":"", d.bkCount, d.pax, d.rev]);
+    exportCSV(rows, headers, `panamax-synthese-${dateFrom}-${dateTo}.csv`);
+  };
+
+  const exportSkippers = () => {
+    const headers = ["Date","Aloès Vera travaille","Panamax travaille","Passagers","CA (€)"];
+    const rows = workDaysList.map(d => [d.label, d.aloes?"OUI":"", d.panamax?"OUI":"", d.pax, d.rev]);
+    exportCSV(rows, headers, `panamax-skippers-${dateFrom}-${dateTo}.csv`);
+  };
+
+  const Section = ({title, children}) => (
+    <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",marginBottom:14,border:"1px solid #deeaf0"}}>
+      <div style={{fontWeight:700,color:TEAL,fontSize:14,marginBottom:12}}>{title}</div>
+      {children}
+    </div>
+  );
+
+  const KPI = ({label, value, sub, color=TEAL, icon}) => (
+    <div style={{background:"#F8FBFC",borderRadius:10,padding:"12px 14px",border:"1px solid #e0eef3",textAlign:"center"}}>
+      <div style={{fontSize:11,color:"#888",marginBottom:4}}>{icon} {label}</div>
+      <div style={{fontSize:20,fontWeight:800,color}}>{value}</div>
+      {sub && <div style={{fontSize:10,color:"#aaa",marginTop:2}}>{sub}</div>}
+    </div>
+  );
+
+  return (
+    <div>
+      {/* Date range picker */}
+      <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",marginBottom:14,border:"1px solid #deeaf0"}}>
+        <div style={{fontWeight:700,color:TEAL,fontSize:14,marginBottom:12}}>🗓️ Plage de dates</div>
+        <Grid cols="1fr 1fr" gap={12} style={{marginBottom:12}}>
+          <FInput label="Du" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
+          <FInput label="Au" type="date" value={dateTo}   onChange={e=>setDateTo(e.target.value)} />
+        </Grid>
+        <Row gap={8} style={{flexWrap:"wrap"}}>
+          {[
+            ["Aujourd'hui", ()=>{setDateFrom(fmt(today));setDateTo(fmt(today));}],
+            ["Cette semaine", ()=>{const mon=new Date(today);mon.setDate(today.getDate()-((today.getDay()||7)-1));const sun=new Date(mon);sun.setDate(mon.getDate()+6);setDateFrom(fmt(mon));setDateTo(fmt(sun));}],
+            ["Ce mois", ()=>{setDateFrom(fmt(new Date(today.getFullYear(),today.getMonth(),1)));setDateTo(fmt(new Date(today.getFullYear(),today.getMonth()+1,0)));}],
+            ["Cette année", ()=>{setDateFrom(`${today.getFullYear()}-01-01`);setDateTo(`${today.getFullYear()}-12-31`);}],
+          ].map(([lbl, fn])=>(
+            <button key={lbl} onClick={fn} style={{background:"#EBF7FA",border:"none",borderRadius:8,padding:"6px 14px",cursor:"pointer",fontSize:12,fontWeight:600,color:TEAL}}>{lbl}</button>
+          ))}
+        </Row>
+      </div>
+
+      {/* View selector */}
+      <div style={{display:"flex",background:"#EBF7FA",borderRadius:10,padding:3,marginBottom:14,width:"fit-content"}}>
+        {[["synthese","📊 Synthèse"],["detail","📋 Détail"],["skippers","⚓ Skippers"]].map(([v,lbl])=>(
+          <button key={v} onClick={()=>setView(v)}
+            style={{background:view===v?"#fff":"transparent",border:"none",borderRadius:8,padding:"7px 16px",cursor:"pointer",fontSize:12,fontWeight:view===v?700:400,color:view===v?TEAL:"#888",boxShadow:view===v?"0 1px 4px rgba(0,0,0,0.1)":"none"}}>
+            {lbl}
+          </button>
+        ))}
+      </div>
+
+      {/* ── SYNTHÈSE ── */}
+      {view === "synthese" && (<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:14}}>
+          <KPI icon="💰" label="CA total" value={fmtEur(totalRev)} sub={`Base : ${fmtEur(baseRev)}`} color={TEAL} />
+          <KPI icon="💸" label="Remises accordées" value={`-${fmtEur(totalDiscount)}`} color={CORAL} />
+          <KPI icon="✅" label="Acomptes encaissés" value={fmtEur(totalAcompte)} color={GREEN} />
+          <KPI icon="⏳" label="Reste à encaisser" value={fmtEur(totalReste)} color={totalReste>0?ORANGE:GREEN} />
+          <KPI icon="👥" label="Passagers" value={totalPax} sub={`${totalAdults} ad. · ${totalChildren} enf.`} />
+          <KPI icon="📋" label="Réservations" value={allBk.length} sub={`${daysTotal} jour(s) de sortie`} />
+        </div>
+
+        <Section title="💰 CA par référent(e)">
+          {Object.entries(bySource).sort((a,b)=>b[1].rev-a[1].rev).map(([src,stats])=>(
+            <Row key={src} style={{padding:"8px 0",borderBottom:"1px solid #f5f8fa",gap:10}}>
+              <span style={{background:srcColor(src),color:"#fff",fontSize:11,padding:"2px 10px",borderRadius:8,fontWeight:700,minWidth:40,textAlign:"center"}}>{srcLabel(src)}</span>
+              <span style={{flex:1,fontSize:13,color:"#555"}}>{stats.count} rés. · {stats.pax} pax</span>
+              {stats.discount>0&&<span style={{fontSize:11,color:GREEN}}>-{fmtEur(stats.discount)}</span>}
+              <span style={{fontWeight:800,color:TEAL,fontSize:14}}>{fmtEur(stats.rev)}</span>
+            </Row>
+          ))}
+          {Object.keys(bySource).length===0&&<div style={{color:"#bbb",fontSize:13,textAlign:"center",padding:12}}>Aucune donnée</div>}
+        </Section>
+
+        <Section title="🚤 CA par bateau">
+          {Object.entries(byBoat).map(([name,stats])=>(
+            <Row key={name} style={{padding:"8px 0",borderBottom:"1px solid #f5f8fa",gap:10}}>
+              <span style={{fontSize:16}}>{name==="Aloes Vera"?"🛥️":"🚤"}</span>
+              <span style={{flex:1,fontWeight:700,color:DARK}}>{name==="Aloes Vera"?"Aloès Vera":name}</span>
+              <span style={{fontSize:12,color:"#888"}}>{stats.days} j. · {stats.pax} pax</span>
+              <span style={{fontWeight:800,color:TEAL,fontSize:14}}>{fmtEur(stats.rev)}</span>
+            </Row>
+          ))}
+        </Section>
+
+        <Row gap={8} style={{flexWrap:"wrap"}}>
+          <Btn variant="success" onClick={exportSynthese} disabled={allBk.length===0}>⬇️ Export synthèse CSV</Btn>
+          <Btn variant="ghost" onClick={exportDetail} disabled={allBk.length===0}>⬇️ Export détail CSV</Btn>
+        </Row>
+      </>)}
+
+      {/* ── DÉTAIL ── */}
+      {view === "detail" && (<>
+        <div style={{background:"#fff",borderRadius:14,border:"1px solid #deeaf0",overflow:"hidden",marginBottom:14}}>
+          <Row style={{padding:"12px 16px",borderBottom:"1px solid #f0f5f7",justifyContent:"space-between"}}>
+            <span style={{fontWeight:700,color:TEAL,fontSize:14}}>📋 {allBk.length} réservation(s)</span>
+            <Btn small variant="success" onClick={exportDetail} disabled={allBk.length===0}>⬇️ CSV</Btn>
+          </Row>
+          {allBk.length===0&&<div style={{padding:"30px",textAlign:"center",color:"#bbb",fontSize:13}}>Aucune réservation sur cette période.</div>}
+          {allBk.map((bk,idx)=>(
+            <div key={bk.id||idx} style={{padding:"12px 16px",borderBottom:idx<allBk.length-1?"1px solid #f5f8fa":"none"}}>
+              <Row style={{marginBottom:6,flexWrap:"wrap",gap:8}}>
+                <span style={{fontWeight:700,color:TEAL,fontSize:13}}>📅 {bk.dateLabel}</span>
+                <span style={{fontSize:12,color:"#888"}}>{bk.boatName==="Aloes Vera"?"🛥️ Aloès Vera":"🚤 Panamax"}</span>
+                <span style={{background:srcColor(bk.source),color:"#fff",fontSize:10,padding:"2px 8px",borderRadius:7,fontWeight:700}}>{srcLabel(bk.source)}</span>
+              </Row>
+              <Row style={{flexWrap:"wrap",gap:12,fontSize:13,marginBottom:4}}>
+                <span style={{fontWeight:600,color:DARK}}>{bk.name}</span>
+                <span style={{color:"#888"}}>👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""}</span>
+                {bk.phone&&<span style={{color:"#aaa",fontSize:11}}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
+                {bk.email&&<span style={{color:"#aaa",fontSize:11}}>✉️ {bk.email}</span>}
+              </Row>
+              <Row style={{justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+                <div style={{fontSize:11,color:"#888"}}>
+                  Base : {fmtEur(bk.adults*P_AD+bk.children*P_CH)}
+                  {bk.discount>0&&<span style={{color:GREEN}}> · Remise -{fmtEur(bk.discount)}</span>}
+                </div>
+                <Row gap={12}>
+                  {bk.acompte_amount>0&&<span style={{fontSize:12,color:"#888"}}>Acompte {fmtEur(bk.acompte_amount)}</span>}
+                  {bk.acompte_amount>0&&<span style={{fontSize:12,fontWeight:700,color:Math.max(0,bk.price-(bk.acompte_amount||0))===0?GREEN:ORANGE}}>
+                    {Math.max(0,bk.price-(bk.acompte_amount||0))===0?"✅ Soldé":`Reste ${fmtEur(Math.max(0,bk.price-(bk.acompte_amount||0)))}`}
+                  </span>}
+                  <span style={{fontWeight:800,fontSize:15,color:TEAL}}>{fmtEur(bk.price)}</span>
+                </Row>
+              </Row>
+              {bk.notes&&<div style={{fontSize:11,color:"#aaa",fontStyle:"italic",marginTop:3}}>📝 {bk.notes}</div>}
+            </div>
+          ))}
+        </div>
+      </>)}
+
+      {/* ── SKIPPERS ── */}
+      {view === "skippers" && (<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+          <KPI icon="📅" label="Jours de sortie" value={daysTotal} color={TEAL} />
+          <KPI icon="🛥️" label="Jours Aloès Vera" value={daysAloes} color="#2471A3" />
+          <KPI icon="🚤" label="Jours Panamax" value={daysPanamax} color="#1A5F7A" />
+        </div>
+
+        <Section title="⚓ Calendrier des sorties">
+          {workDaysList.length===0&&<div style={{color:"#bbb",fontSize:13,textAlign:"center",padding:12}}>Aucune sortie sur cette période.</div>}
+          {workDaysList.map((d,i)=>(
+            <Row key={i} style={{padding:"10px 0",borderBottom:"1px solid #f5f8fa",gap:12}}>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:700,color:DARK,fontSize:13}}>{d.label}</div>
+                <div style={{fontSize:11,color:"#888",marginTop:2}}>{d.bkCount} rés. · {d.pax} passager(s)</div>
+              </div>
+              <Row gap={6}>
+                {d.aloes  &&<span style={{background:"#EBF7FA",color:TEAL,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:8}}>🛥️ Aloès Vera</span>}
+                {d.panamax&&<span style={{background:"#EBF7FA",color:TEAL,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:8}}>🚤 Panamax</span>}
+              </Row>
+              <span style={{fontWeight:700,color:TEAL,fontSize:13,flexShrink:0}}>{fmtEur(d.rev)}</span>
+            </Row>
+          ))}
+        </Section>
+
+        <Btn variant="success" onClick={exportSkippers} disabled={workDaysList.length===0}>⬇️ Export skippers CSV</Btn>
       </>)}
     </div>
   );
@@ -2108,7 +2382,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                             {boat.name === "Aloes Vera" ? "🛥️" : "🚤"}
                           </span>
                           <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>
-                            {r <= 0 ? "🚫" : `R${r}`}
+                            {r <= 0 ? "Complet 🚫" : `Reste ${r} place${r>1?"s":""}`}
                           </span>
                         </div>
                         <div style={{ height: 3, borderRadius: 2, background: isToday ? "rgba(255,255,255,0.2)" : "#ddd", overflow: "hidden" }}>
@@ -2197,7 +2471,7 @@ function AdminView({ data, save, sources, saveSources, reload }) {
         <span style={{ fontSize: 15, fontWeight: 700 }}>Panamax · Admin</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-            {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
+            {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["compta", "🧾 Comptabilité"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
               <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: tab === v ? 700 : 400, whiteSpace: "nowrap" }}>{lbl}</button>
             ))}
             <button onClick={reload} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: "0 8px" }}>↻</button>
@@ -2221,6 +2495,9 @@ function AdminView({ data, save, sources, saveSources, reload }) {
 
 
         </>)}
+
+        {/* ── Comptabilité tab ── */}
+        {tab === "compta" && <ComptaTab data={data} sources={sources} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
