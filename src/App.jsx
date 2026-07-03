@@ -2929,6 +2929,213 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
     toast("Échange effectué ✓");
   };
 
+
+  // ── ALL DATES TAB ─────────────────────────────────────────
+  const AllDatesTab = () => {
+    const [selEntry, setSelEntry] = useState(null); // date entry selected for detail
+    const [selBkPay, setSelBkPay] = useState(null);
+    const [payFormAll, setPayFormAll] = useState([]);
+
+    // Sort all dates chronologically
+    const sortedDates = [...data.dates]
+      .map(d => ({ ...d, _date: dateFromLabel(d.label) }))
+      .sort((a, b) => (a._date||new Date(0)) - (b._date||new Date(0)));
+
+    const savePaymentAll = (dateEntry) => {
+      const total = payFormAll.reduce((s, p) => s + (p.montant||0), 0);
+      const reste = Math.max(0, selBkPay.price - (selBkPay.acompte_amount||0) - (selBkPay.solde_encaisse||0));
+      if (total > reste) { toast("Montant supérieur au reste à payer", false); return; }
+      const updatedBk = {
+        ...selBkPay,
+        paiements_solde: payFormAll.filter(p => p.montant > 0),
+        skipper_encaisseur: skipperUser.id,
+        solde_encaisse: (selBkPay.solde_encaisse||0) + total,
+        solde_date: new Date().toISOString(),
+      };
+      const next = { ...data, dates: data.dates.map(d => d.label !== dateEntry.label ? d : {
+        ...d, boats: d.boats.map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBkPay.id ? bk : updatedBk) }))
+      })};
+      save(next);
+      setSelBkPay(null); setPayFormAll([]);
+      toast("Solde encaissé ✓");
+    };
+
+    // Detail view for a selected date
+    if (selEntry) {
+      const entry = data.dates.find(d => d.label === selEntry);
+      if (!entry) { setSelEntry(null); return null; }
+      const planning = skData?.planning?.[entry.label] || {};
+      const allBk = entry.boats.flatMap(boat => boat.bookings.map(bk => ({...bk, boat})));
+      const totalReste = allBk.reduce((s,bk) => s + Math.max(0, bk.price-(bk.acompte_amount||0)-(bk.solde_encaisse||0)), 0);
+
+      return (
+        <div>
+          <button onClick={() => { setSelEntry(null); setSelBkPay(null); setPayFormAll([]); }}
+            style={{ background:"#EBF7FA", border:"none", borderRadius:8, padding:"7px 16px", cursor:"pointer", color:TEAL, fontWeight:700, fontSize:13, marginBottom:14, display:"flex", alignItems:"center", gap:6 }}>
+            ← Toutes les dates
+          </button>
+
+          <div style={{ background:"#fff", borderRadius:14, padding:"14px 16px", marginBottom:12, border:"1px solid #deeaf0" }}>
+            <div style={{ fontWeight:800, color:TEAL, fontSize:16, marginBottom:6 }}>📅 {entry.label}</div>
+            <Row gap={12} style={{ flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:"#888" }}>👥 {allBk.reduce((s,b)=>s+b.adults+b.children,0)} passager(s)</span>
+              <span style={{ fontSize:12, color:"#888" }}>📋 {allBk.length} réservation(s)</span>
+              {totalReste > 0 && <span style={{ fontSize:12, fontWeight:700, color:CORAL }}>💰 À encaisser : {fmtEur(totalReste)}</span>}
+              {totalReste === 0 && allBk.length > 0 && <span style={{ fontSize:12, fontWeight:700, color:GREEN }}>✅ Tout soldé</span>}
+            </Row>
+            {/* Skipper assignment */}
+            {(planning.aloes || planning.panamax) && (
+              <Row gap={8} style={{ marginTop:8, flexWrap:"wrap" }}>
+                {planning.aloes  && <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 10px", borderRadius:7, fontWeight:600 }}>🛥️ {(skData?.skippers||[]).find(s=>s.id===planning.aloes)?.name||planning.aloes}</span>}
+                {planning.panamax&& <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 10px", borderRadius:7, fontWeight:600 }}>🚤 {(skData?.skippers||[]).find(s=>s.id===planning.panamax)?.name||planning.panamax}</span>}
+              </Row>
+            )}
+          </div>
+
+          {entry.boats.map(boat => {
+            const icon = boat.name==="Aloes Vera"?"🛥️":"🚤";
+            const dname = boat.name==="Aloes Vera"?"Aloès Vera":boat.name;
+            const otherBoat = entry.boats.find(b=>b.id!==boat.id);
+
+            return (
+              <div key={boat.id} style={{ background:"#fff", borderRadius:14, marginBottom:10, border:"1px solid #deeaf0", overflow:"hidden" }}>
+                <div style={{ background:"#F0F8FB", padding:"10px 14px", borderBottom:"1px solid #e8f2f7" }}>
+                  <Row>
+                    <span style={{ fontSize:18 }}>{icon}</span>
+                    <span style={{ fontWeight:800, color:TEAL, fontSize:14, flex:1, marginLeft:8 }}>{dname}</span>
+                    <span style={{ fontSize:12, color:"#888" }}>{boatPax(boat)} pax · {fmtEur(boatRev(boat))}</span>
+                  </Row>
+                </div>
+                {boat.bookings.length === 0 && <div style={{ padding:"12px 14px", color:"#bbb", fontSize:13, textAlign:"center" }}>Aucune réservation</div>}
+                {boat.bookings.map(bk => {
+                  const reste   = Math.max(0, bk.price-(bk.acompte_amount||0)-(bk.solde_encaisse||0));
+                  const soldé   = reste <= 0;
+                  const isPaying= selBkPay?.id===bk.id;
+                  const src     = SOURCES[bk.source]?.label || bk.source || "?";
+                  const srcCol  = SOURCES[bk.source]?.color || "#999";
+
+                  return (
+                    <div key={bk.id} style={{ borderBottom:"1px solid #f5f8fa", padding:"12px 14px" }}>
+                      <Row style={{ marginBottom:4 }}>
+                        <span style={{ background:srcCol, color:"#fff", fontSize:10, padding:"2px 8px", borderRadius:7, fontWeight:700, flexShrink:0 }}>{src}</span>
+                        <div style={{ flex:1, marginLeft:8 }}>
+                          <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</div>
+                          <div style={{ fontSize:11, color:"#888" }}>
+                            👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""}
+                            {bk.phone&&` · 📞 ${bk.phone_prefix||""}${bk.phone}`}
+                          </div>
+                          {bk.paiements_solde?.length>0 && (
+                            <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginTop:3 }}>
+                              {bk.paiements_solde.map((p,i)=>{
+                                const m=PAY_METHODS.find(x=>x.id===p.methode);
+                                return <span key={i} style={{ fontSize:9, fontWeight:700, background:m?.color||"#999", color:"#fff", padding:"2px 6px", borderRadius:5 }}>{m?.icon} {fmtEur(p.montant)}</span>;
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign:"right", flexShrink:0 }}>
+                          <div style={{ fontWeight:800, fontSize:14, color:soldé?GREEN:CORAL }}>{soldé?"✅":fmtEur(reste)}</div>
+                          <div style={{ fontSize:10, color:"#aaa" }}>{fmtEur(bk.price)} total</div>
+                        </div>
+                      </Row>
+                      {!soldé && (
+                        <Row gap={8} style={{ marginTop:6 }}>
+                          <Btn small onClick={() => {
+                            setSelBkPay(bk);
+                            setPayFormAll([{methode:"cb",montant:reste},{methode:"cash",montant:0},{methode:"ancv",montant:0}]);
+                          }}>💳 Encaisser</Btn>
+                          {otherBoat && (
+                            <button onClick={() => moveBooking(bk, boat, otherBoat, entry)}
+                              style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"4px 9px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
+                              → {otherBoat.name==="Aloes Vera"?"Aloès":"Panamax"}
+                            </button>
+                          )}
+                          {bk.phone && (() => {
+                            const tel = fullPhone(bk);
+                            return (
+                              <Row gap={5}>
+                                <a href={`https://wa.me/${tel.replace(/[^0-9]/g,"")}`} target="_blank" rel="noreferrer"
+                                  style={{ background:"#25D366", color:"#fff", borderRadius:6, padding:"4px 8px", textDecoration:"none", fontSize:11, fontWeight:700 }}>WA</a>
+                                <a href={`tel:${tel}`}
+                                  style={{ background:TEAL, color:"#fff", borderRadius:6, padding:"4px 8px", textDecoration:"none", fontSize:11, fontWeight:700 }}>📞</a>
+                              </Row>
+                            );
+                          })()}
+                        </Row>
+                      )}
+                      {isPaying && (
+                        <div style={{ background:"#F0F8FB", borderRadius:10, padding:12, marginTop:10, border:`1px solid ${TEAL}30` }}>
+                          <div style={{ fontWeight:700, color:TEAL, fontSize:12, marginBottom:10 }}>Encaissement — {bk.name} (reste : {fmtEur(reste)})</div>
+                          {PAY_METHODS.map(m=>(
+                            <Row key={m.id} gap={8} style={{ marginBottom:7, alignItems:"center" }}>
+                              <span style={{ background:m.color,color:"#fff",fontSize:10,padding:"2px 8px",borderRadius:7,fontWeight:700,minWidth:70,textAlign:"center" }}>{m.icon} {m.label}</span>
+                              <input type="number" min="0" value={payFormAll.find(p=>p.methode===m.id)?.montant||0}
+                                onChange={e=>setPayFormAll(f=>f.map(p=>p.methode===m.id?{...p,montant:Math.max(0,+e.target.value)}:p))}
+                                style={{ ...inputStyle, flex:1 }} placeholder="0" />
+                              <span style={{ fontSize:11, color:"#888" }}>€</span>
+                            </Row>
+                          ))}
+                          <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>
+                            Total : <strong style={{ color:payFormAll.reduce((s,p)=>s+p.montant,0)===reste?GREEN:CORAL }}>{fmtEur(payFormAll.reduce((s,p)=>s+p.montant,0))}</strong> / {fmtEur(reste)}
+                          </div>
+                          <Row gap={8}>
+                            <Btn small variant="success" onClick={()=>savePaymentAll(entry)} disabled={payFormAll.reduce((s,p)=>s+p.montant,0)===0}>✓ Valider</Btn>
+                            <Btn small variant="ghost" onClick={()=>{ setSelBkPay(null); setPayFormAll([]); }}>Annuler</Btn>
+                          </Row>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // List view — all dates
+    return (
+      <div>
+        {sortedDates.length === 0 && (
+          <div style={{ textAlign:"center", padding:"40px 16px", color:"#888" }}>
+            <div style={{ fontSize:40, marginBottom:10 }}>📋</div>
+            <p>Aucune réservation dans l'application.</p>
+          </div>
+        )}
+        {sortedDates.map(entry => {
+          const allBk  = entry.boats.flatMap(b => b.bookings);
+          const dp     = allBk.reduce((s,b)=>s+b.adults+b.children,0);
+          const dr     = allBk.reduce((s,b)=>s+b.price,0);
+          const reste  = allBk.reduce((s,b)=>s+Math.max(0,b.price-(b.acompte_amount||0)-(b.solde_encaisse||0)),0);
+          const isToday= entry.label === todayLabel;
+          const isPast = entry._date && entry._date < new Date(new Date().setHours(0,0,0,0));
+
+          return (
+            <button key={entry.label} onClick={() => setSelEntry(entry.label)}
+              style={{ width:"100%", textAlign:"left", background:isToday?"#EBF7FA":isPast?"#FAFAFA":"#fff", borderRadius:12, padding:"13px 16px", marginBottom:8, border:isToday?`2px solid ${TEAL}`:"1px solid #e0eef3", cursor:"pointer", opacity:isPast?0.7:1 }}>
+              <Row style={{ marginBottom:4 }}>
+                <span style={{ fontWeight:800, color:isToday?TEAL:DARK, fontSize:14, flex:1 }}>
+                  {isToday && <span style={{ background:TEAL, color:"#fff", fontSize:10, fontWeight:700, padding:"2px 7px", borderRadius:6, marginRight:7 }}>Aujourd'hui</span>}
+                  {entry.label}
+                </span>
+                <span style={{ fontSize:12, color:"#aaa" }}>→</span>
+              </Row>
+              <Row gap={14} style={{ flexWrap:"wrap" }}>
+                <span style={{ fontSize:12, color:"#888" }}>👥 {dp} pax</span>
+                <span style={{ fontSize:12, color:"#888" }}>📋 {allBk.length} rés.</span>
+                <span style={{ fontSize:12, fontWeight:700, color:TEAL }}>{fmtEur(dr)}</span>
+                {reste > 0 && <span style={{ fontSize:12, fontWeight:700, color:CORAL }}>Reste : {fmtEur(reste)}</span>}
+                {reste === 0 && allBk.length > 0 && <span style={{ fontSize:12, fontWeight:700, color:GREEN }}>✅ Soldé</span>}
+              </Row>
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
+
+
   // ── TODAY TAB ──────────────────────────────────────────────
   const TodayTab = () => {
     const [openBkId, setOpenBkId] = useState(null);
@@ -3283,7 +3490,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)" }}>{skipperUser.name}</div>
         </div>
         <div style={{ marginLeft:"auto", display:"flex", gap:4 }}>
-          {[["today","📅 Aujourd'hui"],["planning","🗓️ Planning"],["exchange","🔄 Échange"]].map(([v,lbl])=>(
+          {[["today","📅 Aujourd'hui"],["all","📋 Réservations"],["planning","🗓️ Planning"],["exchange","🔄 Échange"]].map(([v,lbl])=>(
             <button key={v} onClick={()=>setTab(v)}
               style={{ background:tab===v?"rgba(255,255,255,0.2)":"transparent", color:tab===v?"#fff":"rgba(255,255,255,0.55)", border:"none", borderRadius:20, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:tab===v?700:400 }}>
               {lbl}
@@ -3294,6 +3501,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
       <div style={{ maxWidth:700, margin:"0 auto", padding:"14px 14px 80px" }}>
         {tab === "today"    && <TodayTab />}
+        {tab === "all"      && <AllDatesTab />}
         {tab === "planning" && <PlanningTab />}
         {tab === "exchange" && <ExchangeTab />}
       </div>
