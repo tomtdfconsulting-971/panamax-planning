@@ -240,6 +240,61 @@ const inputStyle = { width: "100%", padding: "8px 10px", border: "1px solid #ddd
 
 const FInput  = ({ label, ...p }) => <div><Label>{label}</Label><input  style={inputStyle} {...p} /></div>;
 
+// Price breakdown helper
+const calcTotal = (f) => Math.max(0, f.adults * P_AD + f.children * P_CH - (f.discount || 0));
+const calcReste = (f) => Math.max(0, calcTotal(f) - (f.acompte_amount || 0));
+
+const PriceBreakdown = ({ form }) => {
+  const baseAdults   = form.adults * P_AD;
+  const baseChildren = form.children * P_CH;
+  const discount     = form.discount || 0;
+  const total        = calcTotal(form);
+  const acompte      = form.acompte_amount || 0;
+  const reste        = calcReste(form);
+  return (
+    <div style={{ background: "#F0F8FB", borderRadius: 12, padding: "14px 16px", border: `1px solid ${TEAL}20` }}>
+      <div style={{ fontWeight: 700, color: TEAL, fontSize: 12, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>Détail du prix</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
+        {form.adults > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
+            <span>{form.adults} adulte(s) × {P_AD}€</span>
+            <span style={{ fontWeight: 600 }}>{fmtEur(baseAdults)}</span>
+          </div>
+        )}
+        {form.children > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#555" }}>
+            <span>{form.children} enfant(s) × {P_CH}€</span>
+            <span style={{ fontWeight: 600 }}>{fmtEur(baseChildren)}</span>
+          </div>
+        )}
+        {discount > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", color: GREEN }}>
+            <span>Remise commerciale</span>
+            <span style={{ fontWeight: 600 }}>−{fmtEur(discount)}</span>
+          </div>
+        )}
+        <div style={{ height: 1, background: `${TEAL}20`, margin: "4px 0" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", color: DARK, fontWeight: 800, fontSize: 15 }}>
+          <span>Total</span>
+          <span style={{ color: TEAL }}>{fmtEur(total)}</span>
+        </div>
+        {acompte > 0 && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", color: "#555", fontSize: 13 }}>
+              <span>Acompte versé</span>
+              <span style={{ fontWeight: 600, color: "#888" }}>−{fmtEur(acompte)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: 14, borderTop: `1px dashed ${CORAL}50`, paddingTop: 6, marginTop: 2 }}>
+              <span style={{ color: reste === 0 ? GREEN : CORAL }}>Reste à payer</span>
+              <span style={{ color: reste === 0 ? GREEN : CORAL }}>{reste === 0 ? "✅ Soldé" : fmtEur(reste)}</span>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Phone input with prefix selector + validation
 const PhoneInput = ({ label="Téléphone client", prefixKey, onPrefixChange, value, onChange }) => {
   const isValid = validatePhone(prefixKey, value);
@@ -287,7 +342,7 @@ const CapBar = ({ boat }) => {
 };
 
 // Booking form (used in admin and reseller)
-const BLANK = { adults: 2, children: 0, name: "", source: "", phone_prefix: "+33", phone: "", email: "", price: P_AD * 2, notes: "", acompte: null };
+const BLANK = { adults: 2, children: 0, name: "", source: "", phone_prefix: "+33", phone: "", email: "", price: P_AD * 2, discount: 0, acompte_amount: 0, notes: "" };
 
 function BookingForm({ form, set, onSave, onCancel, title, admin }) {
   const upd = (k, v) => set(f => ({ ...f, [k]: v }));
@@ -531,30 +586,24 @@ function ResellerPortal({ data, save }) {
               style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }}
             />
           </div>
-          <div style={{ marginBottom: 22 }}>
-            <Label>Acompte encaissé ?</Label>
-            <div style={{ display: "flex", gap: 10 }}>
-              {[["oui", "✅ Oui"], ["non", "❌ Non"]].map(([val, lbl]) => (
-                <button key={val} onClick={() => setForm(f => ({ ...f, acompte: f.acompte === val ? null : val }))}
-                  style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#ddd"}`, background: form.acompte === val ? (val === "oui" ? "#E8F8F1" : "#FEF0EB") : "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, color: form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#888" }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
+          <div style={{ marginBottom: 14 }}>
+            <Label>Remise commerciale (€)</Label>
+            <input type="number" min="0" value={form.discount||0}
+              onChange={e => { const d=Math.max(0,+e.target.value); setForm(f=>({...f,discount:d,price:Math.max(0,f.adults*P_AD+f.children*P_CH-d)})); }}
+              style={inputStyle} placeholder="0" />
           </div>
-          <div style={{ background: "#EBF7FA", borderRadius: 12, padding: "14px 18px", marginBottom: 22, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#6aadcc", fontWeight: 600 }}>TOTAL ESTIMÉ</div>
-              <div style={{ fontSize: 11, color: "#7abfd4", marginTop: 2 }}>{form.adults} ad.×{P_AD}€{form.children ? ` + ${form.children} enf.×${P_CH}€` : ""}</div>
-            </div>
-            <span style={{ fontSize: 28, fontWeight: 800, color: TEAL }}>{fmtEur(form.adults * P_AD + form.children * P_CH)}</span>
+          <div style={{ marginBottom: 14 }}>
+            <Label>Acompte versé (€)</Label>
+            <input type="number" min="0" value={form.acompte_amount||0}
+              onChange={e => setForm(f=>({...f,acompte_amount:Math.max(0,+e.target.value)}))}
+              style={inputStyle} placeholder="0" />
+          </div>
+          <div style={{ marginBottom: 22 }}>
+            <PriceBreakdown form={form} />
           </div>
           <Btn full onClick={submit} disabled={!form.name.trim() || form.adults + form.children === 0} style={{ padding: 15, fontSize: 16 }}>
-            Envoyer la demande →
+            Valider la réservation ✓
           </Btn>
-          <p style={{ fontSize: 11, color: "#bbb", textAlign: "center", marginTop: 10, lineHeight: 1.6 }}>
-            Demande validée par Panamax sous 24h.
-          </p>
         </div>
       </div>
     );
@@ -632,7 +681,8 @@ function ResellerPortal({ data, save }) {
                   <div>👥 {p.children ? `${p.adults} adulte(s) + ${p.children} enfant(s)` : `${p.adults} adulte(s)`}</div>
                   {p.phone && <div>📞 {p.phone_prefix||""}{p.phone}</div>}
                   {p.notes && <div>📝 {p.notes}</div>}
-                  {p.acompte && <div style={{ fontWeight: 700, color: p.acompte === "oui" ? GREEN : CORAL }}>{p.acompte === "oui" ? "✅ Acompte encaissé" : "❌ Acompte non encaissé"}</div>}
+                  {p.discount > 0 && <div style={{ color: GREEN, fontSize: 12 }}>Remise : -{fmtEur(p.discount)}</div>}
+                  {p.acompte_amount > 0 && <div style={{ color: "#888", fontSize: 12 }}>Acompte : {fmtEur(p.acompte_amount)} · Reste à payer : <strong style={{ color: CORAL }}>{fmtEur(Math.max(0,p.price-(p.acompte_amount||0)))}</strong></div>}
                   <div style={{ color: TEAL, fontWeight: 700 }}>💰 {fmtEur(p.adults * P_AD + p.children * P_CH)}</div>
                 </div>
                 {isPendingDel ? (
@@ -707,15 +757,17 @@ function ResellerPortal({ data, save }) {
               placeholder="🎂 Anniversaire, ♿ handicap, remise..." 
               style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />
           </div>
-          <div style={{ background: "#EBF7FA", borderRadius: 12, padding: "14px 18px", marginBottom: 22, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div>
-              <div style={{ fontSize: 11, color: "#6aadcc", fontWeight: 600 }}>TOTAL ESTIMÉ</div>
-              <div style={{ fontSize: 11, color: "#7abfd4", marginTop: 2 }}>{editForm.adults} ad.×{P_AD}€{editForm.children ? ` + ${editForm.children} enf.×${P_CH}€` : ""}</div>
-            </div>
-            <span style={{ fontSize: 28, fontWeight: 800, color: TEAL }}>{fmtEur(editForm.adults * P_AD + editForm.children * P_CH)}</span>
+          <div style={{ marginBottom: 14 }}>
+            <Label>Remise commerciale (€)</Label>
+            <input type="number" min="0" value={editForm.discount||0} onChange={e => { const d=Math.max(0,+e.target.value); setEditForm(f=>({...f,discount:d,price:Math.max(0,f.adults*P_AD+f.children*P_CH-d)})); }} style={inputStyle} placeholder="0" />
           </div>
+          <div style={{ marginBottom: 14 }}>
+            <Label>Acompte versé (€)</Label>
+            <input type="number" min="0" value={editForm.acompte_amount||0} onChange={e => setEditForm(f=>({...f,acompte_amount:Math.max(0,+e.target.value)}))} style={inputStyle} placeholder="0" />
+          </div>
+          <div style={{ marginBottom: 22 }}><PriceBreakdown form={editForm} /></div>
           <Btn full onClick={saveEdit} disabled={!editForm.name.trim() || editForm.adults + editForm.children === 0} style={{ padding: 15, fontSize: 16 }}>
-            Enregistrer les modifications →
+            Valider la réservation ✓
           </Btn>
         </div>
       </div>
@@ -1145,7 +1197,7 @@ function StatsTab({ data, sources: srcMap }) {
       bk.phone ? `${bk.phone_prefix||""}${bk.phone}` : "",
       bk.email || "",
       bk.price + "€",
-      bk.acompte === "oui" ? "Oui" : bk.acompte === "non" ? "Non" : "",
+      bk.acompte_amount > 0 ? fmtEur(bk.acompte_amount) : "",
       (bk.notes || "").replace(/,/g, ";"),
     ]);
     const csv = [headers, ...rows].map(r => r.join(",")).join("\n");
@@ -1611,33 +1663,22 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <Label>Acompte encaissé ?</Label>
-          <div style={{ display: "flex", gap: 10 }}>
-            {[["oui", "✅ Oui"], ["non", "❌ Non"]].map(([val, lbl]) => (
-              <button key={val} onClick={() => setAdding(a => ({ ...a, form: { ...a.form, acompte: a.form.acompte === val ? null : val } }))}
-                style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${adding.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#ddd"}`, background: adding.form.acompte === val ? (val === "oui" ? "#E8F8F1" : "#FEF0EB") : "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, color: adding.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#888" }}>
-                {lbl}
-              </button>
-            ))}
-          </div>
+          <Label>Remise commerciale (€)</Label>
+          <input type="number" min="0" value={adding.form.discount||0}
+            onChange={e => { const d=Math.max(0,+e.target.value); setAdding(a=>({...a,form:{...a.form,discount:d,price:Math.max(0,a.form.adults*P_AD+a.form.children*P_CH-d)}})); }}
+            style={inputStyle} placeholder="0" />
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <Label>Prix €</Label>
-          <Row gap={8}>
-            <input type="number" style={{ ...inputStyle, flex: 1 }} value={adding.form.price}
-              onChange={e => setAdding(a => ({ ...a, form: { ...a.form, price: Math.max(0,+e.target.value) } }))} />
-            <button onClick={() => setAdding(a => ({ ...a, form: { ...a.form, price: a.form.adults*P_AD+a.form.children*P_CH } }))}
-              style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", cursor: "pointer", fontSize: 12, fontWeight: 700, height: 38, flexShrink: 0 }}>Auto</button>
-          </Row>
+        <div style={{ marginBottom: 14 }}>
+          <Label>Acompte versé (€)</Label>
+          <input type="number" min="0" value={adding.form.acompte_amount||0}
+            onChange={e => setAdding(a=>({...a,form:{...a.form,acompte_amount:Math.max(0,+e.target.value)}}))}
+            style={inputStyle} placeholder="0" />
         </div>
-        <div style={{ background: "#EBF7FA", borderRadius: 12, padding: "14px 18px", marginBottom: 22, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 11, color: "#6aadcc", fontWeight: 600 }}>TOTAL</div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: TEAL }}>{fmtEur(adding.form.adults*P_AD+adding.form.children*P_CH)}</span>
-        </div>
+        <div style={{ marginBottom: 22 }}><PriceBreakdown form={adding.form} /></div>
         <button onClick={() => { saveAdd(); setAdminStep("day"); setAddBoat(null); }}
           disabled={!adding.form.name.trim() || adding.form.adults+adding.form.children === 0}
           style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!adding.form.name.trim()||adding.form.adults+adding.form.children===0) ? 0.4 : 1 }}>
-          Enregistrer la réservation ✓
+          Valider la réservation ✓
         </button>
       </div>
     );
@@ -1688,33 +1729,22 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             style={{ width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff", resize: "vertical", minHeight: 72, fontFamily: "inherit" }} />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <Label>Acompte encaissé ?</Label>
-          <div style={{ display: "flex", gap: 10 }}>
-            {[["oui", "✅ Oui"], ["non", "❌ Non"]].map(([val, lbl]) => (
-              <button key={val} onClick={() => setEditing(ed => ({ ...ed, form: { ...ed.form, acompte: ed.form.acompte === val ? null : val } }))}
-                style={{ flex: 1, padding: "10px", borderRadius: 10, border: `2px solid ${editing.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#ddd"}`, background: editing.form.acompte === val ? (val === "oui" ? "#E8F8F1" : "#FEF0EB") : "#fff", cursor: "pointer", fontWeight: 700, fontSize: 14, color: editing.form.acompte === val ? (val === "oui" ? GREEN : CORAL) : "#888" }}>
-                {lbl}
-              </button>
-            ))}
-          </div>
+          <Label>Remise commerciale (€)</Label>
+          <input type="number" min="0" value={editing.form.discount||0}
+            onChange={e => { const d=Math.max(0,+e.target.value); setEditing(ed=>({...ed,form:{...ed.form,discount:d,price:Math.max(0,ed.form.adults*P_AD+ed.form.children*P_CH-d)}})); }}
+            style={inputStyle} placeholder="0" />
         </div>
-        <div style={{ marginBottom: 16 }}>
-          <Label>Prix €</Label>
-          <Row gap={8}>
-            <input type="number" style={{ ...inputStyle, flex: 1 }} value={editing.form.price}
-              onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, price: Math.max(0,+e.target.value) } }))} />
-            <button onClick={() => setEditing(ed => ({ ...ed, form: { ...ed.form, price: ed.form.adults*P_AD+ed.form.children*P_CH } }))}
-              style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 8, padding: "0 16px", cursor: "pointer", fontSize: 12, fontWeight: 700, height: 38, flexShrink: 0 }}>Auto</button>
-          </Row>
+        <div style={{ marginBottom: 14 }}>
+          <Label>Acompte versé (€)</Label>
+          <input type="number" min="0" value={editing.form.acompte_amount||0}
+            onChange={e => setEditing(ed=>({...ed,form:{...ed.form,acompte_amount:Math.max(0,+e.target.value)}}))}
+            style={inputStyle} placeholder="0" />
         </div>
-        <div style={{ background: "#EBF7FA", borderRadius: 12, padding: "14px 18px", marginBottom: 22, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div style={{ fontSize: 11, color: "#6aadcc", fontWeight: 600 }}>TOTAL</div>
-          <span style={{ fontSize: 26, fontWeight: 800, color: TEAL }}>{fmtEur(editing.form.adults*P_AD+editing.form.children*P_CH)}</span>
-        </div>
+        <div style={{ marginBottom: 22 }}><PriceBreakdown form={editing.form} /></div>
         <button onClick={() => { saveEdit(); setAdminStep("day"); }}
           disabled={!editing.form.name.trim() || editing.form.adults+editing.form.children === 0}
           style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!editing.form.name.trim()||editing.form.adults+editing.form.children===0) ? 0.4 : 1 }}>
-          Enregistrer les modifications ✓
+          Valider la réservation ✓
         </button>
       </div>
     );
@@ -1823,18 +1853,17 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                         📝 {bk.notes}
                       </div>
                     )}
-                    {bk.acompte && (
-                      <span style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8, background: bk.acompte === "oui" ? "#E8F8F1" : "#FEF0EB", color: bk.acompte === "oui" ? GREEN : CORAL }}>
-                        {bk.acompte === "oui" ? "✅ Acompte encaissé" : "❌ Acompte non encaissé"}
-                      </span>
-                    )}
+                    {bk.discount > 0 && <span style={{ display:"inline-block", marginTop:3, fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:7, background:"#E8F8F1", color:GREEN }}>Remise -{fmtEur(bk.discount)}</span>}
+                    {bk.acompte_amount > 0 && <div style={{ marginTop:3, fontSize:11, color:"#888" }}>Acompte : {fmtEur(bk.acompte_amount)} · <span style={{ color:Math.max(0,bk.price-(bk.acompte_amount||0))===0?GREEN:CORAL, fontWeight:700 }}>{Math.max(0,bk.price-(bk.acompte_amount||0))===0?"✅ Soldé":`Reste ${fmtEur(Math.max(0,bk.price-(bk.acompte_amount||0)))}`}</span></div>}
                   </div>
 
                   {/* Prix + actions */}
                   <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                    <span style={{ fontWeight: 800, fontSize: 15, color: bk.price === 0 ? ORANGE : TEAL }}>
-                      {bk.price === 0 ? "Offert" : fmtEur(bk.price)}
-                    </span>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: bk.price === 0 ? ORANGE : TEAL }}>{bk.price === 0 ? "Offert" : fmtEur(bk.price)}</div>
+                      {bk.discount > 0 && <div style={{ fontSize: 10, color: GREEN }}>Remise : -{fmtEur(bk.discount)}</div>}
+                      {bk.acompte_amount > 0 && <div style={{ fontSize: 10, color: "#888" }}>Acompte : {fmtEur(bk.acompte_amount)} · Reste : {fmtEur(Math.max(0,bk.price-(bk.acompte_amount||0)))}</div>}
+                    </div>
                     <Row gap={6}>
                       <button onClick={() => { setEditing({ dateId: entry.id, boatId: bk.boat.id, bkId: bk.id, form: { ...bk } }); setAdminStep("edit-form"); }}
                         style={{ background: "#EBF7FA", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: TEAL, fontWeight: 600 }}>✏️ Modifier</button>
@@ -1965,7 +1994,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                                 {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
                               {bk.email&&<span style={{ color:"#aaa", fontSize:10 }}>✉️ {bk.email}</span>}
                                 <span style={{ fontWeight:700, color:bk.price===0?ORANGE:srcColor }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
-                                {bk.acompte&&<span style={{ fontSize:10, fontWeight:700, color:bk.acompte==="oui"?GREEN:CORAL }}>{bk.acompte==="oui"?"✅":"❌"}</span>}
+                                {bk.acompte_amount>0&&<span style={{ fontSize:9, color:"#888" }}>Acpt:{fmtEur(bk.acompte_amount)}</span>}
                               </Row>
                             ))}
                           </div>
