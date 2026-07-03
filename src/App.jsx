@@ -2936,9 +2936,11 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
     const [selBkPay, setSelBkPay] = useState(null);
     const [payFormAll, setPayFormAll] = useState([]);
 
-    // Sort all dates chronologically
+    // Sort all dates chronologically — today and future only
+    const todayMidnight = new Date(new Date().setHours(0,0,0,0));
     const sortedDates = [...data.dates]
       .map(d => ({ ...d, _date: dateFromLabel(d.label) }))
+      .filter(d => !d._date || d._date >= todayMidnight)
       .sort((a, b) => (a._date||new Date(0)) - (b._date||new Date(0)));
 
     const savePaymentAll = (dateEntry) => {
