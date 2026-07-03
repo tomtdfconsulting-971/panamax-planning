@@ -252,7 +252,7 @@ const Counter = ({ label, value, onChange, min = 0, max = 12, sublabel }) => (
     {label && <Label>{label}</Label>}
     <div style={{ display: "flex", alignItems: "center", gap: 0, background: "#fff", border: "1px solid #ddd", borderRadius: 10, overflow: "hidden" }}>
       <button onClick={() => onChange(Math.max(min, value - 1))}
-        style={{ width: 46, height: 46, background: value <= min ? "#f5f5f5" : "#EBF7FA", border: "none", cursor: value <= min ? "not-allowed" : "pointer", fontSize: 22, fontWeight: 700, color: value <= min ? "#ccc" : TEAL, flexShrink: 0 }}>
+        style={{ width: 48, height: 48, background: value <= min ? "#f5f5f5" : "#EBF7FA", border: "none", cursor: value <= min ? "not-allowed" : "pointer", fontSize: 24, fontWeight: 700, color: value <= min ? "#ccc" : TEAL, flexShrink: 0, touchAction:"manipulation" }}>
         −
       </button>
       <div style={{ flex: 1, textAlign: "center" }}>
@@ -260,13 +260,13 @@ const Counter = ({ label, value, onChange, min = 0, max = 12, sublabel }) => (
         {sublabel && <div style={{ fontSize: 10, color: "#aaa", marginTop: -2 }}>{sublabel}</div>}
       </div>
       <button onClick={() => onChange(Math.min(max, value + 1))}
-        style={{ width: 46, height: 46, background: value >= max ? "#f5f5f5" : "#EBF7FA", border: "none", cursor: value >= max ? "not-allowed" : "pointer", fontSize: 22, fontWeight: 700, color: value >= max ? "#ccc" : TEAL, flexShrink: 0 }}>
+        style={{ width: 48, height: 48, background: value >= max ? "#f5f5f5" : "#EBF7FA", border: "none", cursor: value >= max ? "not-allowed" : "pointer", fontSize: 24, fontWeight: 700, color: value >= max ? "#ccc" : TEAL, flexShrink: 0, touchAction:"manipulation" }}>
         +
       </button>
     </div>
   </div>
 );
-const inputStyle = { width: "100%", padding: "8px 10px", border: "1px solid #ddd", borderRadius: 7, fontSize: 13, boxSizing: "border-box", background: "#fff" };
+const inputStyle = { width: "100%", padding: "10px 12px", border: "1px solid #ddd", borderRadius: 7, fontSize: 14, boxSizing: "border-box", background: "#fff", outline: "none", maxWidth: "100%", display: "block" };
 
 const FInput  = ({ label, ...p }) => <div><Label>{label}</Label><input  style={inputStyle} {...p} /></div>;
 
@@ -282,7 +282,7 @@ const PriceBreakdown = ({ form }) => {
   const acompte      = form.acompte_amount || 0;
   const reste        = calcReste(form);
   return (
-    <div style={{ background: "#F0F8FB", borderRadius: 12, padding: "14px 16px", border: `1px solid ${TEAL}20` }}>
+    <div style={{ background: "#F0F8FB", borderRadius: 12, padding: "14px 16px", border: `1px solid ${TEAL}20`, boxSizing:"border-box", width:"100%", overflowX:"hidden" }}>
       <div style={{ fontWeight: 700, color: TEAL, fontSize: 12, marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 }}>Détail du prix</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, fontSize: 13 }}>
         {form.adults > 0 && (
@@ -333,7 +333,7 @@ const PhoneInput = ({ label="Téléphone client", prefixKey, onPrefixChange, val
   return (
     <div>
       {label && <Label>{label}</Label>}
-      <div style={{ display:"flex", gap:0, border:`1.5px solid ${isInvalid ? CORAL : "#ddd"}`, borderRadius:7, overflow:"hidden", background:"#fff" }}>
+      <div style={{ display:"flex", gap:0, border:`1.5px solid ${isInvalid ? CORAL : "#ddd"}`, borderRadius:7, overflow:"hidden", background:"#fff", width:"100%", boxSizing:"border-box" }}>
         <select value={prefixKey} onChange={e => onPrefixChange(e.target.value)}
           style={{ border:"none", background:"#F8FBFC", padding:"8px 6px", fontSize:12, cursor:"pointer", flexShrink:0, outline:"none", color:DARK, fontWeight:600 }}>
           {PHONE_PREFIXES.map(p => (
@@ -821,7 +821,7 @@ function ResellerPortal({ data, save }) {
 
   // ── Main calendar ──────────────────────────
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 10px 40px", maxWidth: 700, margin: "0 auto", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 10px 80px", maxWidth: 700, margin: "0 auto", width: "100%", boxSizing: "border-box", overflowX: "hidden" }}>
       {/* Top bar: mes réservations + view toggle */}
       <Row style={{ justifyContent: "space-between", padding: "12px 4px 0", alignItems: "center" }}>
         <div style={{ display:"flex", background:"rgba(255,255,255,0.15)", borderRadius:10, padding:2 }}>
@@ -870,7 +870,7 @@ function ResellerPortal({ data, save }) {
                       const r=spots(boat); const p=pct(boat);
                       const bc=r<=0?CORAL:p>70?ORANGE:"#27AE60";
                       return(
-                        <div key={boat.id} style={{ background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"7px 10px" }}>
+                        <div key={boat.id} style={{ background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"7px 10px", boxSizing:"border-box", width:"100%", overflow:"hidden" }}>
                           <Row style={{ marginBottom:4 }}>
                             <span style={{ fontSize:14 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
                             <span style={{ fontSize:13, fontWeight:700, color:"#fff", flex:1, marginLeft:6 }}>{boat.name==="Aloes Vera"?"Aloès Vera":"Panamax"}</span>
@@ -1122,10 +1122,10 @@ function ComptaTab({ data, sources: srcMap }) {
       {/* Date range picker */}
       <div style={{background:"#fff",borderRadius:14,padding:"16px 18px",marginBottom:14,border:"1px solid #deeaf0"}}>
         <div style={{fontWeight:700,color:TEAL,fontSize:14,marginBottom:12}}>🗓️ Plage de dates</div>
-        <Grid cols="1fr 1fr" gap={12} style={{marginBottom:12}}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10, marginBottom:12 }}>
           <FInput label="Du" type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} />
           <FInput label="Au" type="date" value={dateTo}   onChange={e=>setDateTo(e.target.value)} />
-        </Grid>
+        </div>
         <Row gap={8} style={{flexWrap:"wrap"}}>
           {[
             ["Aujourd'hui", ()=>{setDateFrom(fmt(today));setDateTo(fmt(today));}],
@@ -1229,7 +1229,7 @@ function ComptaTab({ data, sources: srcMap }) {
 
       {/* ── SKIPPERS ── */}
       {view === "skippers" && (<>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:8,marginBottom:14}}>
           <KPI icon="📅" label="Jours de sortie" value={daysTotal} color={TEAL} />
           <KPI icon="🛥️" label="Jours Aloès Vera" value={daysAloes} color="#2471A3" />
           <KPI icon="🚤" label="Jours Panamax" value={daysPanamax} color="#1A5F7A" />
@@ -2093,7 +2093,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         </div>
 
         {/* Boats capacity */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 10, marginBottom: 12 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 }}>
           {entry.boats.map(boat => {
             const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
             const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
@@ -2137,7 +2137,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
             return (
               <div key={bk.id} style={{ borderBottom: idx < allBookings.length-1 ? "1px solid #f5f8fa" : "none" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10, padding: "12px 14px", alignItems: "start" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, padding: "10px 12px", alignItems: "start", boxSizing:"border-box", width:"100%", overflow:"hidden" }}>
 
                   {/* Source + bateau */}
                   <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center", minWidth: 56 }}>
@@ -2160,7 +2160,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                       const tel = fullPhone(bk);
                       const waNum = tel.replace(/[^0-9]/g,"");
                       return (
-                        <Row gap={8} style={{ marginBottom: 4 }}>
+                        <Row gap={8} style={{ marginBottom: 4, flexWrap:"wrap" }}>
                           <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer"
                             style={{ display:"flex", alignItems:"center", gap:5, background:"#25D366", color:"#fff", borderRadius:8, padding:"6px 14px", textDecoration:"none", fontSize:12, fontWeight:700, flexShrink:0 }}>
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
@@ -2227,7 +2227,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   return (
     <div>
       {/* View toggle */}
-      <div style={{ display:"flex", background:"#EBF7FA", borderRadius:10, padding:3, marginBottom:14, width:"fit-content" }}>
+      <div style={{ display:"flex", background:"#EBF7FA", borderRadius:10, padding:3, marginBottom:14, maxWidth:"100%", overflowX:"auto" }}>
         {[["month","📅 Mois"],["week","📆 Semaine"]].map(([m,lbl])=>(
           <button key={m} onClick={()=>setViewMode(m)}
             style={{ background:viewMode===m?"#fff":"transparent", border:"none", borderRadius:8, padding:"7px 18px", cursor:"pointer", fontSize:13, fontWeight:viewMode===m?700:400, color:viewMode===m?TEAL:"#888", boxShadow:viewMode===m?"0 1px 4px rgba(0,0,0,0.1)":"none" }}>
@@ -2483,13 +2483,13 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
 
 
   return (
-    <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: "#EBF7FA", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+    <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", boxSizing: "border-box", WebkitTextSizeAdjust:"100%", background: "#EBF7FA", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
       {/* Header */}
-      <div style={{ background: DARK, color: "#fff", padding: "0 10px", height: 56, display: "flex", alignItems: "center", gap: 8, position: "sticky", top: 0, zIndex: 100, overflowX: "auto" }}>
+      <div style={{ background: DARK, color: "#fff", padding: "0 8px", height: 56, display: "flex", alignItems: "center", gap: 6, position: "sticky", top: 0, zIndex: 100, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
         <span style={{ fontSize: 22 }}>🐟</span>
         <span style={{ fontSize: 15, fontWeight: 700 }}>Panamax · Admin</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
-          <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch", flexShrink: 1, minWidth: 0 }}>
             {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["compta", "🧾 Comptabilité"], ["skippers_mgmt", "⚓ Skippers"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
               <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: tab === v ? 700 : 400, whiteSpace: "nowrap" }}>{lbl}</button>
             ))}
@@ -2498,11 +2498,11 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
         </div>
       </div>
 
-      <div style={{ maxWidth: 980, margin: "0 auto", padding: "12px 10px 60px", boxSizing: "border-box", width: "100%", overflowX: "hidden" }}>
+      <div style={{ maxWidth: 980, margin: "0 auto", padding: "12px 10px 80px", boxSizing: "border-box", width: "100%", overflowX: "hidden" }}>
 
         {/* ── Planning tab ── */}
         {tab === "planning" && (<>
-          <Grid cols="repeat(3,1fr)" gap={8} style={{ marginBottom: 14 }}>
+          <Grid cols="repeat(auto-fit,minmax(90px,1fr))" gap={8} style={{ marginBottom: 14 }}>
             {[{ v: fmtEur(gRev), l: "Chiffre d'affaires", i: "💰" }, { v: gPax, l: "Passagers", i: "👥" }, { v: gBk, l: "Réservations", i: "📋" }].map(({ v, l, i }) => (
               <div key={l} style={{ background: "#fff", borderRadius: 12, padding: "14px 18px", textAlign: "center", border: "1px solid #e0eef3" }}>
                 <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>{i} {l}</div>
@@ -2752,7 +2752,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
     const total = Object.values(byMethod).reduce((s,v)=>s+v,0);
     return (
       <div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(90px,1fr))", gap:8, marginBottom:14 }}>
           {PAY_METHODS.map(m=>(
             <div key={m.id} style={{ background:m.color, borderRadius:10, padding:"12px 10px", textAlign:"center" }}>
               <div style={{ fontSize:11, color:"rgba(255,255,255,0.75)", marginBottom:4 }}>{m.icon} {m.label}</div>
@@ -3155,7 +3155,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
         {/* Assign skippers to boats */}
         <div style={{ background:"#fff", borderRadius:14, padding:"16px 18px", marginBottom:14, border:"1px solid #deeaf0" }}>
           <div style={{ fontWeight:700, color:TEAL, fontSize:14, marginBottom:12 }}>⚓ Affectation des skippers</div>
-          <Grid cols="1fr 1fr" gap={10}>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10 }}>
             {todayEntry.boats.map(boat => {
               const boatKey   = boat.name === "Aloes Vera" ? "aloes" : "panamax";
               const assigned  = planning[boatKey];
@@ -3176,7 +3176,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                 </div>
               );
             })}
-          </Grid>
+          </div>
         </div>
 
         {/* Bookings per boat */}
@@ -3260,7 +3260,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                             Encaissement solde — {bk.name} (reste : {fmtEur(reste)})
                           </div>
                           {PAY_METHODS.map(m => (
-                            <Row key={m.id} gap={10} style={{ marginBottom:8, alignItems:"center" }}>
+                            <Row key={m.id} gap={8} style={{ marginBottom:8, alignItems:"center", flexWrap:"nowrap" }}>
                               <span style={{ background:m.color, color:"#fff", fontSize:11, padding:"3px 10px", borderRadius:8, fontWeight:700, minWidth:80, textAlign:"center" }}>{m.icon} {m.label}</span>
                               <input type="number" min="0" value={payForm.find(p=>p.methode===m.id)?.montant||0}
                                 onChange={e => setPayForm(f => f.map(p => p.methode===m.id ? {...p, montant:Math.max(0,+e.target.value)} : p))}
@@ -3434,7 +3434,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           💡 Sélectionnez un de vos créneaux et un créneau de {otherSkipper?.name||"l'autre skipper"} pour les échanger. L'échange est <strong>immédiat et définitif</strong>.
         </div>
 
-        <Grid cols="1fr 1fr" gap={12}>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
           <div>
             <div style={{ fontWeight:700, color:skipperUser.color, fontSize:13, marginBottom:8 }}>
               <div style={{ width:10, height:10, borderRadius:5, background:skipperUser.color, display:"inline-block", marginRight:6 }}/>
@@ -3451,7 +3451,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
             {theirSlots.length===0 && <div style={{ color:"#bbb", fontSize:12 }}>Aucun créneau disponible</div>}
             {theirSlots.map((slot,i) => <SlotBtn key={i} slot={slot} selected={theirSlot?.label===slot.label&&theirSlot?.boatKey===slot.boatKey} onSelect={setTheirSlot} color={otherSkipper?.color||"#888"} />)}
           </div>
-        </Grid>
+        </div>
 
         {mySlot && theirSlot && (
           <div style={{ background:"#F0F8FB", borderRadius:12, padding:16, marginTop:16, border:`1px solid ${TEAL}30` }}>
@@ -3488,10 +3488,10 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           <div style={{ fontSize:15, fontWeight:700 }}>Skipper</div>
           <div style={{ fontSize:11, color:"rgba(255,255,255,0.65)" }}>{skipperUser.name}</div>
         </div>
-        <div style={{ marginLeft:"auto", display:"flex", gap:4 }}>
-          {[["today","📅 Aujourd'hui"],["all","📋 Réservations"],["planning","🗓️ Planning"],["exchange","🔄 Échange"]].map(([v,lbl])=>(
+        <div style={{ marginLeft:"auto", display:"flex", gap:2, overflowX:"auto", WebkitOverflowScrolling:"touch", flexShrink:1 }}>
+          {[["today","📅"],["all","📋"],["planning","🗓️"],["exchange","🔄"]].map(([v,lbl])=>(
             <button key={v} onClick={()=>setTab(v)}
-              style={{ background:tab===v?"rgba(255,255,255,0.2)":"transparent", color:tab===v?"#fff":"rgba(255,255,255,0.55)", border:"none", borderRadius:20, padding:"5px 12px", cursor:"pointer", fontSize:12, fontWeight:tab===v?700:400 }}>
+              style={{ background:tab===v?"rgba(255,255,255,0.2)":"transparent", color:tab===v?"#fff":"rgba(255,255,255,0.55)", border:"none", borderRadius:16, padding:"5px 10px", cursor:"pointer", fontSize:13, fontWeight:tab===v?700:400, whiteSpace:"nowrap" }}>
               {lbl}
             </button>
           ))}
@@ -3551,7 +3551,7 @@ export default function Root() {
   return (
     <div>
       {mode === "reseller" && (
-        <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: `linear-gradient(160deg, ${DARK} 0%, ${TEAL} 55%, #2E86AB 100%)`, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
+        <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", boxSizing: "border-box", background: `linear-gradient(160deg, ${DARK} 0%, ${TEAL} 55%, #2E86AB 100%)`, fontFamily: "'Segoe UI', system-ui, sans-serif", display: "flex", flexDirection: "column" }}>
           <div style={{ padding: "24px 24px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
             <img src="/1-ICONE-POISSON-PANAMAX-Original.png" alt="Panamax" style={{ width: 72, height: 72, objectFit: "contain", marginBottom: 6 }} />
             <div style={{ color: "#fff", fontSize: 21, fontWeight: 800 }}>Panamax Excursions</div>
