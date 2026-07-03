@@ -2401,7 +2401,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                             {boat.name === "Aloes Vera" ? "🛥️" : "🚤"}
                           </span>
                           <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>
-                            {r <= 0 ? "Complet 🚫" : `Reste ${r} place${r>1?"s":""}`}
+                            {r <= 0 ? "Complet 🚫" : `R${r}`}
                           </span>
                         </div>
                         <div style={{ height: 3, borderRadius: 2, background: isToday ? "rgba(255,255,255,0.2)" : "#ddd", overflow: "hidden" }}>
