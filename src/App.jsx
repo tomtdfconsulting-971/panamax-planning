@@ -1206,7 +1206,6 @@ function ComptaTab({ data, sources: srcMap }) {
               <Row style={{flexWrap:"wrap",gap:12,fontSize:13,marginBottom:4}}>
                 <span style={{fontWeight:600,color:DARK}}>{bk.name}</span>
                 <span style={{color:"#888"}}>👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""}</span>
-                {bk.phone&&<span style={{color:"#aaa",fontSize:11}}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
                 {bk.email&&<span style={{color:"#aaa",fontSize:11}}>✉️ {bk.email}</span>}
               </Row>
               <Row style={{justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
@@ -1618,7 +1617,7 @@ function StatsTab({ data, sources: srcMap }) {
               <div style={{ fontWeight: 700, color: DARK, fontSize: 13, marginBottom: 2 }}>{bk.name}</div>
               <div style={{ fontSize: 11, color: "#888" }}>
                 📅 {bk.dateLabel} · 👥 {bk.children ? `${bk.adults}+${bk.children}` : bk.adults} pax
-                {bk.phone && ` · 📞 ${bk.phone_prefix||""}${bk.phone}`}
+                
                 {bk.email && ` · ✉️ ${bk.email}`}
               </div>
               {bk.notes && <div style={{ fontSize: 11, color: "#999", fontStyle: "italic", marginTop: 2 }}>📝 {bk.notes}</div>}
@@ -2155,7 +2154,6 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                       <span style={{ fontSize: 13, color: "#555" }}>
                         👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
                       </span>
-                      {bk.phone && <span style={{ fontSize: 13, color: "#888" }}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
                       {bk.email && <span style={{ fontSize: 13, color: "#888" }}>✉️ {bk.email}</span>}
                     </Row>
                     {bk.phone && (() => {
@@ -2319,8 +2317,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                                 <span style={{ fontSize:10 }}>{bk.boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
                                 <span style={{ fontWeight:600, flex:1 }}>{bk.name}</span>
                                 <span style={{ color:"#888" }}>{bk.children?`${bk.adults}+${bk.children}`:bk.adults} pax</span>
-                                {bk.phone&&<span style={{ color:"#aaa", fontSize:10 }}>📞 {bk.phone_prefix||""}{bk.phone}</span>}
-                              {bk.email&&<span style={{ color:"#aaa", fontSize:10 }}>✉️ {bk.email}</span>}
+                                {bk.email&&<span style={{ color:"#aaa", fontSize:10 }}>✉️ {bk.email}</span>}
                               {bk.phone&&(()=>{const tel=fullPhone(bk);const wa=tel.replace(/[^0-9]/g,"");return(<Row gap={4} style={{marginTop:2}}>
                                 <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" style={{background:"#25D366",color:"#fff",borderRadius:5,padding:"2px 7px",textDecoration:"none",fontSize:9,fontWeight:700}}>WhatsApp</a>
                                 <a href={`tel:${tel}`} style={{background:TEAL,color:"#fff",borderRadius:5,padding:"2px 7px",textDecoration:"none",fontSize:9,fontWeight:700}}>Appeler</a>
@@ -3024,7 +3021,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</div>
                           <div style={{ fontSize:11, color:"#888" }}>
                             👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""}
-                            {bk.phone&&` · 📞 ${bk.phone_prefix||""}${bk.phone}`}
+                            
                           </div>
                           {bk.paiements_solde?.length>0 && (
                             <div style={{ display:"flex", gap:4, flexWrap:"wrap", marginTop:3 }}>
@@ -3218,7 +3215,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</div>
                           <div style={{ fontSize:11, color:"#888", marginTop:2 }}>
                             👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""} · {fmtEur(bk.price)}
-                            {bk.phone && ` · 📞 ${bk.phone_prefix||""}${bk.phone}`}
+                            
                           </div>
                           {/* Payment methods already collected */}
                           {bk.paiements_solde?.length > 0 && (
