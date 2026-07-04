@@ -328,14 +328,14 @@ const PriceBreakdown = ({ form }) => {
 // Phone input with prefix selector + validation
 const PhoneInput = ({ label="Téléphone client", prefixKey, onPrefixChange, value, onChange }) => {
   const isValid = validatePhone(prefixKey, value);
-  const isInvalid = isValid === false; // false = invalid, null = empty (ok)
+  const isInvalid = isValid === false;
   const found = PHONE_PREFIXES.find(p => p.code === prefixKey) || PHONE_PREFIXES[0];
   return (
     <div>
       {label && <Label>{label}</Label>}
       <div style={{ display:"flex", gap:0, border:`1.5px solid ${isInvalid ? CORAL : "#ddd"}`, borderRadius:7, overflow:"hidden", background:"#fff", width:"100%", boxSizing:"border-box" }}>
         <select value={prefixKey} onChange={e => onPrefixChange(e.target.value)}
-          style={{ border:"none", background:"#F8FBFC", padding:"8px 6px", fontSize:12, cursor:"pointer", flexShrink:0, outline:"none", color:DARK, fontWeight:600 }}>
+          style={{ border:"none", background:"#F8FBFC", padding:"10px 8px", fontSize:13, cursor:"pointer", flexShrink:0, outline:"none", color:DARK, fontWeight:600, maxWidth:"45%" }}>
           {PHONE_PREFIXES.map(p => (
             <option key={p.code} value={p.code}>{p.flag} {p.code}</option>
           ))}
@@ -343,10 +343,10 @@ const PhoneInput = ({ label="Téléphone client", prefixKey, onPrefixChange, val
         <div style={{ width:1, background:"#eee", flexShrink:0 }}/>
         <input type="tel" value={value} onChange={e => onChange(e.target.value)}
           placeholder={found.ex}
-          style={{ border:"none", padding:"8px 10px", fontSize:13, flex:1, outline:"none", background:"transparent", minWidth:0 }} />
+          style={{ border:"none", padding:"10px 10px", fontSize:13, flex:1, outline:"none", background:"transparent", minWidth:0 }} />
       </div>
       {isInvalid && (
-        <div style={{ fontSize:11, color:CORAL, marginTop:3, display:"flex", alignItems:"center", gap:4 }}>
+        <div style={{ fontSize:11, color:CORAL, marginTop:4, display:"flex", alignItems:"center", gap:4 }}>
           ⚠️ Numéro invalide pour {found.flag} {found.label} ({found.len.join(" ou ")} chiffres attendus)
         </div>
       )}
@@ -594,13 +594,15 @@ function ResellerPortal({ data, save }) {
             <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={form.children}
               onChange={v => setForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
           </Grid>
-          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 14 }}>
             <FSelect label="Référent(e)" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
               ><option value="">— Sélectionner —</option>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
+          </div>
+          <div style={{ marginBottom: 14 }}>
             <PhoneInput prefixKey={form.phone_prefix||"+33"} onPrefixChange={v=>setForm(f=>({...f,phone_prefix:v}))} value={form.phone} onChange={v=>setForm(f=>({...f,phone:v}))} />
-          </Grid>
+          </div>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
           </div>
@@ -774,13 +776,15 @@ function ResellerPortal({ data, save }) {
             <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editForm.children}
               onChange={v => setEditForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
           </Grid>
-          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+          <div style={{ marginBottom: 14 }}>
             <FSelect label="Référent(e)" value={editForm.source} onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}>
               ><option value="">— Sélectionner —</option>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
+          </div>
+          <div style={{ marginBottom: 14 }}>
             <PhoneInput prefixKey={editForm.phone_prefix||"+33"} onPrefixChange={v=>setEditForm(f=>({...f,phone_prefix:v}))} value={editForm.phone} onChange={v=>setEditForm(f=>({...f,phone:v}))} />
-          </Grid>
+          </div>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
           </div>
@@ -1953,12 +1957,14 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={adding.form.children}
             onChange={v => setAdding(a => ({ ...a, form: { ...a.form, children: v, price: a.form.adults*P_AD+v*P_CH } }))} />
         </Grid>
-        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 14 }}>
           <FSelect label="Référent(e)" value={adding.form.source} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </FSelect>
+        </div>
+        <div style={{ marginBottom: 14 }}>
           <PhoneInput prefixKey={adding.form.phone_prefix||"+33"} onPrefixChange={v=>setAdding(a=>({...a,form:{...a.form,phone_prefix:v}}))} value={adding.form.phone} onChange={v=>setAdding(a=>({...a,form:{...a.form,phone:v}}))} />
-        </Grid>
+        </div>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Nom du client" value={adding.form.name} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
         </div>
@@ -2019,12 +2025,14 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editing.form.children}
             onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: ed.form.adults*P_AD+v*P_CH } }))} />
         </Grid>
-        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 14 }}>
+        <div style={{ marginBottom: 14 }}>
           <FSelect label="Référent(e)" value={editing.form.source} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </FSelect>
+        </div>
+        <div style={{ marginBottom: 14 }}>
           <PhoneInput prefixKey={editing.form.phone_prefix||"+33"} onPrefixChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone_prefix:v}}))} value={editing.form.phone} onChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone:v}}))} />
-        </Grid>
+        </div>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Nom du client" value={editing.form.name} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
         </div>
