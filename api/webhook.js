@@ -105,7 +105,12 @@ export default async function handler(req, res) {
 
   // ── Parse commande ─────────────────────────────────────────
   const order = req.body;
-  if (!order?.id) return res.status(400).json({ error: 'Payload invalide' });
+
+  // WordPress envoie un ping de test sans order.id lors de la création du webhook
+  if (!order?.id) {
+    console.log('Ping WordPress reçu — webhook actif');
+    return res.status(200).json({ success: true, message: 'Webhook Panamax actif' });
+  }
 
   if (!['completed', 'processing'].includes(order.status)) {
     return res.status(200).json({ message: `Statut "${order.status}" ignoré` });
