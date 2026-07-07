@@ -5,8 +5,13 @@ const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
 const PIN       = "1234";
-const STORE_KEY         = "panamax-v3";
-const STORE_KEY_SKIPPERS = "panamax-v3-skippers"; // skipper accounts & planning
+const STORE_KEY          = "panamax-v3";
+const STORE_KEY_SKIPPERS = "panamax-v3-skippers";
+
+// ── EmailJS config ─────────────────────────────────────────────
+const EMAILJS_SERVICE_ID  = "service_h2mdqfs";   // à remplacer
+const EMAILJS_TEMPLATE_ID = "template_2ywr08e";  // à remplacer
+const EMAILJS_PUBLIC_KEY  = "RFeCuLmI9rtEy4Y0f";   // à remplacer
 const TEAL      = "#1A5F7A";
 const CORAL     = "#E8673A";
 const DARK      = "#0D3D52";
@@ -60,6 +65,63 @@ function validatePhone(prefix, number) {
 
 // ── Utils ──────────────────────────────────────────────────────
 const uid      = () => Math.random().toString(36).slice(2, 9);
+
+// ── Send confirmation email to client via EmailJS ─────────────
+async function sendConfirmationEmail(booking, dateLabel) {
+  try {
+    if (!booking.email) return; // pas d'email → on skip silencieusement
+
+    const adults   = booking.adults   || 0;
+    const children = booking.children || 0;
+    const price    = booking.price    || 0;
+    const discount = booking.discount || 0;
+    const acompte  = booking.acompte_amount || 0;
+    const reste    = Math.max(0, price - acompte);
+
+    // Build passengers line
+    let passagers = `${adults} adulte${adults > 1 ? "s" : ""}`;
+    if (children > 0) passagers += ` + ${children} enfant${children > 1 ? "s" : ""}`;
+
+    // Build price detail lines
+    const ligneRemise  = discount > 0 ? `🎁 Remise commerciale : -${discount}€` : "";
+    const ligneAcompte = acompte > 0  ? `✅ Acompte versé : ${acompte}€`         : "✅ Acompte versé : 0€";
+    const ligneReste   = `⏳ Reste à régler le jour J : ${reste}€`;
+
+    const templateParams = {
+      to_name:    booking.name,
+      to_email:   booking.email,
+      date:       dateLabel || "À confirmer",
+      passagers,
+      montant:    `${price}€`,
+      remise:     ligneRemise,
+      acompte:    ligneAcompte,
+      reste:      ligneReste,
+      notes:      booking.notes ? `📝 ${booking.notes}` : "",
+      pdf_url:    "https://panamax-planning.vercel.app/itineraire-panamax.pdf",
+      reply_to:   "contact@panamaxexcursions.com",
+    };
+
+    const response = await fetch(`https://api.emailjs.com/api/v1.0/email/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_id:  EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_ID,
+        user_id:     EMAILJS_PUBLIC_KEY,
+        template_params: templateParams,
+      }),
+    });
+
+    if (response.ok) {
+      console.log("Email de confirmation envoyé à", booking.email);
+    } else {
+      const err = await response.text();
+      console.error("EmailJS error:", err);
+    }
+  } catch (err) {
+    console.error("sendConfirmationEmail error:", err);
+  }
+}
 const fullPhone = (bk) => {
   if (!bk.phone) return null;
   const digits = bk.phone.replace(/[^0-9]/g, "");
@@ -502,6 +564,8 @@ function ResellerPortal({ data, save }) {
     };
 
     save(nextData);
+    // Send confirmation email to client
+    sendConfirmationEmail({ ...form, price: form.adults*P_AD+form.children*P_CH }, selDate?.label || "");
     setStep("ok");
   };
 
@@ -1990,7 +2054,11 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             style={inputStyle} placeholder="0" />
         </div>
         <div style={{ marginBottom: 22 }}><PriceBreakdown form={adding.form} /></div>
-        <button onClick={() => { saveAdd(); setAdminStep("day"); setAddBoat(null); }}
+        <button onClick={() => {
+            const entry = data.dates.find(d => d.id === adding.dateId);
+            sendConfirmationEmail(adding.form, entry?.label || "");
+            saveAdd(); setAdminStep("day"); setAddBoat(null);
+          }}
           disabled={!adding.form.name.trim() || adding.form.adults+adding.form.children === 0}
           style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!adding.form.name.trim()||adding.form.adults+adding.form.children===0) ? 0.4 : 1 }}>
           Valider la réservation ✓
