@@ -3171,6 +3171,11 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                               })}
                             </div>
                           )}
+                          {bk.notes && (
+                            <div style={{ marginTop:5, fontSize:11, color:"#666", fontStyle:"italic", background:"#F8FBFC", borderRadius:6, padding:"5px 8px", border:"1px solid #e8eef3" }}>
+                              📝 {bk.notes}
+                            </div>
+                          )}
                         </div>
                         <div style={{ textAlign:"right", flexShrink:0 }}>
                           <div style={{ fontWeight:800, fontSize:14, color:soldé?GREEN:CORAL }}>{soldé?"✅":fmtEur(reste)}</div>
@@ -3364,6 +3369,11 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                                 const m = PAY_METHODS.find(x=>x.id===p.methode);
                                 return <span key={i} style={{ fontSize:10, fontWeight:700, background:m?.color||"#999", color:"#fff", padding:"2px 7px", borderRadius:6 }}>{m?.icon} {m?.label} {fmtEur(p.montant)}</span>;
                               })}
+                            </div>
+                          )}
+                          {bk.notes && (
+                            <div style={{ marginTop:5, fontSize:11, color:"#555", fontStyle:"italic", background:"rgba(255,255,255,0.15)", borderRadius:6, padding:"5px 8px", border:"1px solid rgba(255,255,255,0.2)" }}>
+                              📝 {bk.notes}
                             </div>
                           )}
                         </div>
