@@ -2310,79 +2310,99 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
 
 
+            const tel    = bk.phone ? fullPhone(bk) : null;
+            const waNum  = tel ? tel.replace(/[^0-9]/g,"") : null;
+            const reste  = Math.max(0, bk.price-(bk.acompte_amount||0)-(bk.solde_encaisse||0));
+
             return (
-              <div key={bk.id} style={{ borderBottom: idx < allBookings.length-1 ? "1px solid #f5f8fa" : "none" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 8, padding: "10px 12px", alignItems: "start", boxSizing:"border-box", width:"100%", overflow:"hidden" }}>
+              <div key={bk.id} style={{ borderBottom: idx < allBookings.length-1 ? "1px solid #f0f5f7" : "none", padding: "16px 18px" }}>
 
-                  {/* Source + bateau */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "center", minWidth: 56 }}>
-                    <span style={{ background: srcColor, color: "#fff", fontSize: 11, padding: "3px 10px", borderRadius: 10, fontWeight: 700, whiteSpace: "nowrap" }}>
-                      {isWoo ? "🌐 Web" : srcLabel}
-                    </span>
-                    <span style={{ fontSize: 11, color: "#aaa", textAlign: "center" }}>{boatIcon} {boatName}</span>
+                {/* Header : badge source + bateau + nom */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:12, flexWrap:"wrap" }}>
+                  <span style={{ background:srcColor, color:"#fff", fontSize:11, padding:"3px 10px", borderRadius:10, fontWeight:700, flexShrink:0 }}>
+                    {isWoo ? "🌐 Web" : srcLabel}
+                  </span>
+                  <span style={{ fontSize:12, color:"#aaa", flexShrink:0 }}>{boatIcon} {boatName}</span>
+                  <span style={{ fontWeight:800, color:DARK, fontSize:15, flex:1 }}>{bk.name}</span>
+                </div>
+
+                {/* Infos ligne par ligne */}
+                <div style={{ display:"flex", flexDirection:"column", gap:7, marginBottom:12 }}>
+                  <div style={{ fontSize:13, color:"#555" }}>
+                    👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
                   </div>
+                  {bk.email && <div style={{ fontSize:13, color:"#888" }}>✉️ {bk.email}</div>}
+                  {bk.notes && (
+                    <div style={{ fontSize:12, color:"#777", fontStyle:"italic", background:"#F8FBFC", borderRadius:6, padding:"6px 10px", border:"1px solid #eee" }}>
+                      📝 {bk.notes}
+                    </div>
+                  )}
 
-                  {/* Infos client */}
-                  <div>
-                    <div style={{ fontWeight: 700, color: DARK, fontSize: 14, marginBottom: 4 }}>{bk.name}</div>
-                    <Row gap={16} style={{ flexWrap: "wrap", marginBottom: 6 }}>
-                      <span style={{ fontSize: 13, color: "#555" }}>
-                        👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
-                      </span>
-                      {bk.email && <span style={{ fontSize: 13, color: "#888" }}>✉️ {bk.email}</span>}
-                    </Row>
-                    {bk.phone && (() => {
-                      const tel = fullPhone(bk);
-                      const waNum = tel.replace(/[^0-9]/g,"");
-                      return (
-                        <Row gap={8} style={{ marginBottom: 4, flexWrap:"wrap" }}>
-                          <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer"
-                            style={{ display:"flex", alignItems:"center", gap:5, background:"#25D366", color:"#fff", borderRadius:8, padding:"6px 14px", textDecoration:"none", fontSize:12, fontWeight:700, flexShrink:0 }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                            WhatsApp
-                          </a>
-                          <a href={`tel:${tel}`}
-                            style={{ display:"flex", alignItems:"center", gap:5, background:"#1A5F7A", color:"#fff", borderRadius:8, padding:"6px 14px", textDecoration:"none", fontSize:12, fontWeight:700, flexShrink:0 }}>
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="white"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
-                            Appeler
-                          </a>
-                        </Row>
-                      );
-                    })()}
-                    {bk.notes && (
-                      <div style={{ fontSize: 12, color: "#777", fontStyle: "italic", background: "#F8FBFC", borderRadius: 6, padding: "5px 10px", border: "1px solid #eee", marginTop: 4 }}>
-                        📝 {bk.notes}
+                  {/* Prix */}
+                  <div style={{ background:"#F0F8FB", borderRadius:8, padding:"10px 12px", display:"flex", flexDirection:"column", gap:4 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between" }}>
+                      <span style={{ fontSize:12, color:"#888" }}>Total</span>
+                      <span style={{ fontWeight:800, fontSize:15, color:bk.price===0?ORANGE:TEAL }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
+                    </div>
+                    {bk.discount > 0 && (
+                      <div style={{ display:"flex", justifyContent:"space-between" }}>
+                        <span style={{ fontSize:12, color:GREEN }}>Remise</span>
+                        <span style={{ fontSize:12, fontWeight:700, color:GREEN }}>-{fmtEur(bk.discount)}</span>
                       </div>
                     )}
-                    {bk.discount > 0 && <span style={{ display:"inline-block", marginTop:3, fontSize:11, fontWeight:700, padding:"2px 8px", borderRadius:7, background:"#E8F8F1", color:GREEN }}>Remise -{fmtEur(bk.discount)}</span>}
-                    {bk.acompte_amount > 0 && <div style={{ marginTop:3, fontSize:11, color:"#888" }}>Acompte : {fmtEur(bk.acompte_amount)} · <span style={{ color:Math.max(0,bk.price-(bk.acompte_amount||0))===0?GREEN:CORAL, fontWeight:700 }}>{Math.max(0,bk.price-(bk.acompte_amount||0))===0?"✅ Soldé":`Reste ${fmtEur(Math.max(0,bk.price-(bk.acompte_amount||0)))}`}</span></div>}
-                  </div>
-
-                  {/* Prix + actions */}
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontWeight: 800, fontSize: 15, color: bk.price === 0 ? ORANGE : TEAL }}>{bk.price === 0 ? "Offert" : fmtEur(bk.price)}</div>
-                      {bk.discount > 0 && <div style={{ fontSize: 10, color: GREEN }}>Remise : -{fmtEur(bk.discount)}</div>}
-                      {bk.acompte_amount > 0 && <div style={{ fontSize: 10, color: "#888" }}>Acompte : {fmtEur(bk.acompte_amount)} · Reste : {fmtEur(Math.max(0,bk.price-(bk.acompte_amount||0)))}</div>}
-                    </div>
-                    <Row gap={6}>
-                      <button onClick={() => { setEditing({ dateId: entry.id, boatId: bk.boat.id, bkId: bk.id, form: { ...bk } }); setAdminStep("edit-form"); }}
-                        style={{ background: "#EBF7FA", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: TEAL, fontWeight: 600 }}>✏️ Modifier</button>
-                      <button onClick={() => setDelBk(bk.id)}
-                        style={{ background: "#FEF0EB", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: CORAL, fontWeight: 600 }}>🗑</button>
-                      {Math.max(0, bk.price-(bk.acompte_amount||0)-(bk.solde_encaisse||0)) > 0 && (
-                        <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={bk.boat.id} small />
-                      )}
-                    </Row>
+                    {bk.acompte_amount > 0 && (
+                      <div style={{ display:"flex", justifyContent:"space-between" }}>
+                        <span style={{ fontSize:12, color:"#888" }}>Acompte versé</span>
+                        <span style={{ fontSize:12, color:"#888" }}>{fmtEur(bk.acompte_amount)}</span>
+                      </div>
+                    )}
+                    {(bk.acompte_amount > 0 || bk.solde_encaisse > 0) && (
+                      <div style={{ display:"flex", justifyContent:"space-between", borderTop:"1px solid #deeaf0", paddingTop:4, marginTop:2 }}>
+                        <span style={{ fontSize:12, fontWeight:700, color:reste===0?GREEN:CORAL }}>Reste à payer</span>
+                        <span style={{ fontSize:13, fontWeight:800, color:reste===0?GREEN:CORAL }}>{reste===0?"✅ Soldé":fmtEur(reste)}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
+                {/* Boutons contact */}
+                {tel && (
+                  <div style={{ display:"flex", gap:8, marginBottom:10, flexWrap:"wrap" }}>
+                    <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer"
+                      style={{ display:"flex", alignItems:"center", gap:5, background:"#25D366", color:"#fff", borderRadius:8, padding:"8px 16px", textDecoration:"none", fontSize:12, fontWeight:700 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                      WhatsApp
+                    </a>
+                    <a href={`tel:${tel}`}
+                      style={{ display:"flex", alignItems:"center", gap:5, background:TEAL, color:"#fff", borderRadius:8, padding:"8px 16px", textDecoration:"none", fontSize:12, fontWeight:700 }}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z"/></svg>
+                      Appeler
+                    </a>
+                    {reste > 0 && <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={bk.boat.id} small />}
+                  </div>
+                )}
+                {!tel && reste > 0 && (
+                  <div style={{ marginBottom:10 }}>
+                    <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={bk.boat.id} small />
+                  </div>
+                )}
+
+                {/* Actions modifier / supprimer */}
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => { setEditing({ dateId:entry.id, boatId:bk.boat.id, bkId:bk.id, form:{...bk} }); setAdminStep("edit-form"); }}
+                    style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
+                  <button onClick={() => setDelBk(bk.id)}
+                    style={{ background:"#FEF0EB", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:CORAL, fontWeight:600 }}>🗑 Supprimer</button>
+                </div>
+
                 {delBk === bk.id && (
-                  <Row gap={8} style={{ padding: "6px 20px 12px", background: "#FEF8F6" }}>
-                    <span style={{ fontSize: 12, color: CORAL, flex: 1 }}>Confirmer la suppression de cette réservation ?</span>
-                    <Btn small variant="danger" onClick={() => doDelBk(entry.id, bk.boat.id, bk.id)}>Oui, supprimer</Btn>
-                    <Btn small variant="ghost" onClick={() => setDelBk(null)}>Annuler</Btn>
-                  </Row>
+                  <div style={{ marginTop:10, background:"#FEF8F6", borderRadius:8, padding:"10px 14px" }}>
+                    <div style={{ fontSize:12, color:CORAL, marginBottom:8 }}>Confirmer la suppression de cette réservation ?</div>
+                    <Row gap={8}>
+                      <Btn small variant="danger" onClick={() => doDelBk(entry.id, bk.boat.id, bk.id)}>Oui, supprimer</Btn>
+                      <Btn small variant="ghost" onClick={() => setDelBk(null)}>Annuler</Btn>
+                    </Row>
+                  </div>
                 )}
               </div>
             );
