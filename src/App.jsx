@@ -66,6 +66,24 @@ function validatePhone(prefix, number) {
 // ── Utils ──────────────────────────────────────────────────────
 const uid      = () => Math.random().toString(36).slice(2, 9);
 
+// ── Générer un lien de paiement Stripe ────────────────────────
+async function generateStripeLink({ amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId }) {
+  try {
+    const res = await fetch('/api/stripe-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId }),
+    });
+    const data = await res.json();
+    if (data.url) return data.url;
+    console.error('Stripe error:', data.error);
+    return null;
+  } catch (err) {
+    console.error('generateStripeLink error:', err);
+    return null;
+  }
+}
+
 // ── Send confirmation email to client via EmailJS ─────────────
 async function sendConfirmationEmail(booking, dateLabel) {
   try {
@@ -2335,6 +2353,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                         style={{ background: "#EBF7FA", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: TEAL, fontWeight: 600 }}>✏️ Modifier</button>
                       <button onClick={() => setDelBk(bk.id)}
                         style={{ background: "#FEF0EB", border: "none", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontSize: 12, color: CORAL, fontWeight: 600 }}>🗑</button>
+                      {Math.max(0, bk.price-(bk.acompte_amount||0)-(bk.solde_encaisse||0)) > 0 && (
+                        <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={bk.boat.id} small />
+                      )}
                     </Row>
                   </div>
                 </div>
@@ -3188,6 +3209,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                             setSelBkPay(bk);
                             setPayFormAll([{methode:"cb",montant:reste},{methode:"cash",montant:0},{methode:"ancv",montant:0}]);
                           }}>💳 Encaisser</Btn>
+                          <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={boat.id} small />
                           {otherBoat && (
                             <button onClick={() => moveBooking(bk, boat, otherBoat, entry)}
                               style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"4px 9px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
@@ -3394,6 +3416,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           }}>
                             💳 Encaisser le solde
                           </Btn>
+                          <StripeButton bk={bk} dateLabel={todayLabel} dateId={todayEntry.id} boatId={boat.id} small />
                           {otherBoat && (
                             <button onClick={() => moveBooking(bk, boat, otherBoat, todayEntry)}
                               style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
@@ -3680,6 +3703,67 @@ function PinGate({ onUnlock }) {
         <Btn full onClick={check} style={{ padding: 12, fontSize: 15 }}>Accéder →</Btn>
       </div>
     </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// STRIPE PAYMENT BUTTON
+// ════════════════════════════════════════════════════════════════
+function StripeButton({ bk, dateLabel, dateId, boatId, small }) {
+  const [loading, setLoading] = useState(false);
+  const [copied,  setCopied]  = useState(false);
+
+  const reste = Math.max(0, bk.price - (bk.acompte_amount||0) - (bk.solde_encaisse||0));
+  if (reste <= 0) return null;
+
+  const handleStripe = async () => {
+    setLoading(true);
+    const url = await generateStripeLink({
+      amount:      reste,
+      clientName:  bk.name,
+      clientEmail: bk.email || '',
+      dateLabel,
+      bookingId:   bk.id,
+      dateId,
+      boatId,
+    });
+    setLoading(false);
+    if (!url) { alert('Erreur lors de la génération du lien Stripe'); return; }
+
+    // Ouvrir le menu de choix
+    const choice = window.confirm(
+      `Lien de paiement généré pour ${bk.name} (${fmtEur(reste)})\n\nCliquez OK pour copier le lien et l'envoyer par WhatsApp\nCliquez Annuler pour ouvrir le lien directement`
+    );
+    if (choice) {
+      // Copier + WhatsApp
+      navigator.clipboard?.writeText(url).catch(() => {});
+      const msg = encodeURIComponent(`Bonjour ${bk.name},\n\nVoici le lien pour régler le solde de votre excursion Panamax (${fmtEur(reste)}) :\n${url}\n\nÀ très bientôt sur l'eau ! 🌊`);
+      const tel = fullPhone(bk);
+      const waNum = tel ? tel.replace(/[^0-9]/g,'') : '';
+      if (waNum) window.open(`https://wa.me/${waNum}?text=${msg}`, '_blank');
+      else { window.open(`https://wa.me?text=${msg}`, '_blank'); }
+      setCopied(true); setTimeout(()=>setCopied(false), 3000);
+    } else {
+      window.open(url, '_blank');
+    }
+  };
+
+  return (
+    <button onClick={handleStripe} disabled={loading}
+      style={{
+        background: loading ? "#ccc" : "#635BFF",
+        color: "#fff", border: "none",
+        borderRadius: 6,
+        padding: small ? "5px 10px" : "7px 14px",
+        cursor: loading ? "not-allowed" : "pointer",
+        fontSize: small ? 11 : 12,
+        fontWeight: 700,
+        display: "flex", alignItems: "center", gap: 4,
+        flexShrink: 0,
+        opacity: loading ? 0.7 : 1,
+      }}>
+      {loading ? "⏳" : copied ? "✓ Lien copié !" : "💳 Lien paiement"}
+    </button>
   );
 }
 
