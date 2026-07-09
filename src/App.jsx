@@ -9,9 +9,9 @@ const STORE_KEY          = "panamax-v3";
 const STORE_KEY_SKIPPERS = "panamax-v3-skippers";
 
 // ── EmailJS config ─────────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = "VOTRE_SERVICE_ID";   // à remplacer
-const EMAILJS_TEMPLATE_ID = "VOTRE_TEMPLATE_ID";  // à remplacer
-const EMAILJS_PUBLIC_KEY  = "VOTRE_PUBLIC_KEY";   // à remplacer
+const EMAILJS_SERVICE_ID  = "service_h2mdqfs";   // à remplacer
+const EMAILJS_TEMPLATE_ID = "template_qbfow07";  // à remplacer
+const EMAILJS_PUBLIC_KEY  = "RFeCuLmI9rtEy4Y0f";   // à remplacer
 const TEAL      = "#1A5F7A";
 const CORAL     = "#E8673A";
 const DARK      = "#0D3D52";
