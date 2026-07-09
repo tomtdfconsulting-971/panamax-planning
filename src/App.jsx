@@ -84,6 +84,19 @@ async function generateStripeLink({ amount, clientName, clientEmail, dateLabel, 
   }
 }
 
+// ── Send Telegram notification to admin ───────────────────────
+async function sendTelegramNotif(message) {
+  try {
+    await fetch('/api/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message }),
+    });
+  } catch (err) {
+    console.error('Telegram error:', err);
+  }
+}
+
 // ── Send confirmation email to client via EmailJS ─────────────
 async function sendConfirmationEmail(booking, dateLabel) {
   try {
@@ -583,7 +596,10 @@ function ResellerPortal({ data, save }) {
 
     save(nextData);
     // Send confirmation email to client
-    sendConfirmationEmail({ ...form, price: form.adults*P_AD+form.children*P_CH }, selDate?.label || "");
+    const bkPrice = form.adults*P_AD+form.children*P_CH;
+    sendConfirmationEmail({ ...form, price: bkPrice }, selDate?.label || "");
+    // Notify admin via Telegram
+    sendTelegramNotif(`🆕 Nouvelle réservation\n📅 ${selDate?.label || ""}\n👤 ${form.name}\n👥 ${form.adults} adulte(s)${form.children ? ` + ${form.children} enfant(s)` : ""}\n💰 ${bkPrice}€${form.acompte_amount > 0 ? ` · Acompte ${form.acompte_amount}€` : ""}\n👥 Via : ${SOURCES[form.source]?.label || form.source || "?"}`);
     setStep("ok");
   };
 
@@ -2139,6 +2155,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         <button onClick={() => {
             const entry = data.dates.find(d => d.id === adding.dateId);
             sendConfirmationEmail(adding.form, entry?.label || "");
+            sendTelegramNotif(`🆕 Nouvelle réservation (Admin)\n📅 ${entry?.label || ""}\n👤 ${adding.form.name}\n👥 ${adding.form.adults} adulte(s)${adding.form.children ? ` + ${adding.form.children} enfant(s)` : ""}\n💰 ${adding.form.price}€\n👥 Via : ${SOURCES[adding.form.source]?.label || adding.form.source || "?"}`);
             saveAdd(); setAdminStep("day"); setAddBoat(null);
           }}
           disabled={!adding.form.name.trim() || adding.form.adults+adding.form.children === 0}
@@ -3044,6 +3061,8 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
     save(next);
     setSelBk(null); setPayForm([]);
     toast("Solde encaissé ✓");
+    const methodsStr = payForm.filter(p=>p.montant>0).map(p=>`${PAY_METHODS.find(m=>m.id===p.methode)?.label||p.methode} ${p.montant}€`).join(' + ');
+    sendTelegramNotif(`💳 Solde encaissé\n⚓ ${skipperUser.name}\n👤 ${selBk.name}\n📅 ${selDate?.label||todayLabel}\n💰 ${methodsStr}`);
   };
 
   // Move booking from one boat to another
