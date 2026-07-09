@@ -465,7 +465,7 @@ function BookingForm({ form, set, onSave, onCancel, title, admin }) {
         <FInput label="Enfants" type="number" min="0" value={form.children}
           onChange={e => { const v = Math.max(0, +e.target.value); upd("children", v); upd("price", form.adults * P_AD + v * P_CH); }} />
         <FSelect label="Source" value={form.source} onChange={e => upd("source", e.target.value)}>
-          ><option value="">— Sélectionner —</option>
+          <option value="">— Sélectionner —</option>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </FSelect>
         {admin && (
@@ -742,7 +742,7 @@ function ResellerPortal({ data, save }) {
           </Grid>
           <div style={{ marginBottom: 14 }}>
             <FSelect label="Référent(e)" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
-              ><option value="">— Sélectionner —</option>
+              <option value="">— Sélectionner —</option>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
           </div>
@@ -924,7 +924,7 @@ function ResellerPortal({ data, save }) {
           </Grid>
           <div style={{ marginBottom: 14 }}>
             <FSelect label="Référent(e)" value={editForm.source} onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}>
-              ><option value="">— Sélectionner —</option>
+              <option value="">— Sélectionner —</option>
             {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </FSelect>
           </div>
