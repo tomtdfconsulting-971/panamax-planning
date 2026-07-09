@@ -608,8 +608,8 @@ function ResellerPortal({ data, save }) {
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ background: "#fff", borderRadius: 24, padding: 40, textAlign: "center", maxWidth: 420, width: "100%" }}>
         <div style={{ fontSize: 64, marginBottom: 8 }}>✅</div>
-        <h2 style={{ color: TEAL, margin: "0 0 8px" }}>Demande envoyée !</h2>
-        <p style={{ color: "#666", lineHeight: 1.7, marginBottom: 24 }}>Votre réservation est en attente de validation par l'équipe Panamax.</p>
+        <h2 style={{ color: TEAL, margin: "0 0 8px" }}>Réservation validée ! ✅</h2>
+        <p style={{ color: "#666", lineHeight: 1.7, marginBottom: 24 }}>Votre réservation est confirmée. Un email de confirmation vous a été envoyé.</p>
         <div style={{ background: "#F0F8FB", borderRadius: 12, padding: 16, marginBottom: 24, textAlign: "left", fontSize: 14, lineHeight: 2, border: `1px solid ${TEAL}20` }}>
           <div>📅 <strong>{selDate?.label}</strong></div>
           <div>{selBoat?.name === "Aloes Vera" ? "🛥️" : "🚤"} <strong>{selBoat?.name === "Aloes Vera" ? "Aloès Vera" : "Panamax"}</strong></div>
