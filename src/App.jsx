@@ -2504,26 +2504,42 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                         const totalPax = bks.reduce((s,b)=>s+b.adults+b.children,0);
                         const totalRev = bks.reduce((s,b)=>s+b.price,0);
                         return(
-                          <div key={src} style={{ background:`${srcColor}12`, borderRadius:8, padding:"8px 12px", borderLeft:`3px solid ${srcColor}` }}>
-                            <Row style={{ marginBottom:4 }}>
-                              <span style={{ background:srcColor, color:"#fff", fontSize:11, padding:"2px 10px", borderRadius:8, fontWeight:700 }}>{srcLabel}</span>
-                              <span style={{ fontSize:11, color:"#888", marginLeft:8 }}>{bks.length} rés. · {totalPax} pax</span>
-                              <span style={{ marginLeft:"auto", fontWeight:700, color:srcColor, fontSize:12 }}>{fmtEur(totalRev)}</span>
-                            </Row>
-                            {bks.map(bk=>(
-                              <Row key={bk.id} style={{ fontSize:12, color:DARK, padding:"3px 0", borderBottom:`1px solid ${srcColor}20`, gap:8 }}>
-                                <span style={{ fontSize:10 }}>{bk.boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
-                                <span style={{ fontWeight:600, flex:1 }}>{bk.name}</span>
-                                <span style={{ color:"#888" }}>{bk.children?`${bk.adults}+${bk.children}`:bk.adults} pax</span>
-                                {bk.email&&<span style={{ color:"#aaa", fontSize:10 }}>✉️ {bk.email}</span>}
-                              {bk.phone&&(()=>{const tel=fullPhone(bk);const wa=tel.replace(/[^0-9]/g,"");return(<Row gap={4} style={{marginTop:2}}>
-                                <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" style={{background:"#25D366",color:"#fff",borderRadius:5,padding:"2px 7px",textDecoration:"none",fontSize:9,fontWeight:700}}>WhatsApp</a>
-                                <a href={`tel:${tel}`} style={{background:TEAL,color:"#fff",borderRadius:5,padding:"2px 7px",textDecoration:"none",fontSize:9,fontWeight:700}}>Appeler</a>
-                              </Row>);})()}
-                                <span style={{ fontWeight:700, color:bk.price===0?ORANGE:srcColor }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
-                                {bk.acompte_amount>0&&<span style={{ fontSize:9, color:"#888" }}>Acpt:{fmtEur(bk.acompte_amount)}</span>}
-                              </Row>
-                            ))}
+                          <div key={src} style={{ background:`${srcColor}08`, borderRadius:8, marginBottom:6, overflow:"hidden", border:`1px solid ${srcColor}25` }}>
+                            {/* Source header */}
+                            <div style={{ background:`${srcColor}18`, padding:"6px 10px", display:"flex", alignItems:"center", gap:6 }}>
+                              <span style={{ background:srcColor, color:"#fff", fontSize:10, padding:"2px 8px", borderRadius:6, fontWeight:700 }}>{srcLabel}</span>
+                              <span style={{ fontSize:10, color:"#666" }}>{bks.length} rés. · {totalPax} pax</span>
+                              <span style={{ marginLeft:"auto", fontWeight:800, color:srcColor, fontSize:12 }}>{fmtEur(totalRev)}</span>
+                            </div>
+                            {/* Booking rows — compact, une info par ligne */}
+                            {bks.map((bk,i)=>{
+                              const tel   = bk.phone ? fullPhone(bk) : null;
+                              const wa    = tel ? tel.replace(/[^0-9]/g,"") : null;
+                              const reste = Math.max(0, bk.price-(bk.acompte_amount||0)-(bk.solde_encaisse||0));
+                              return(
+                                <div key={bk.id} style={{ padding:"10px 12px", borderTop:i>0?`1px solid ${srcColor}15`:"none" }}>
+                                  <div style={{ fontWeight:700, color:DARK, fontSize:13, marginBottom:5 }}>
+                                    {bk.boat.name==="Aloes Vera"?"🛥️":"🚤"} {bk.name}
+                                  </div>
+                                  <div style={{ fontSize:12, color:"#555", marginBottom:3 }}>
+                                    👥 {bk.children?`${bk.adults}+${bk.children} pax`:`${bk.adults} pax`}
+                                  </div>
+                                  <div style={{ fontSize:12, fontWeight:700, color:bk.price===0?ORANGE:TEAL, marginBottom:3 }}>
+                                    💰 {bk.price===0?"Offert":fmtEur(bk.price)}
+                                    {reste>0 && <span style={{ color:CORAL, fontWeight:700 }}> · Reste {fmtEur(reste)}</span>}
+                                    {reste===0 && bk.acompte_amount>0 && <span style={{ color:GREEN }}> · ✅ Soldé</span>}
+                                  </div>
+                                  {bk.notes && <div style={{ fontSize:11, color:"#888", fontStyle:"italic", marginBottom:4 }}>📝 {bk.notes}</div>}
+                                  {tel && (
+                                    <div style={{ display:"flex", gap:5, marginTop:6, flexWrap:"wrap" }}>
+                                      <a href={`https://wa.me/${wa}`} target="_blank" rel="noreferrer" style={{ background:"#25D366", color:"#fff", borderRadius:6, padding:"5px 10px", textDecoration:"none", fontSize:11, fontWeight:700 }}>WhatsApp</a>
+                                      <a href={`tel:${tel}`} style={{ background:TEAL, color:"#fff", borderRadius:6, padding:"5px 10px", textDecoration:"none", fontSize:11, fontWeight:700 }}>Appeler</a>
+                                      {reste>0 && <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={bk.boat.id} small />}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         );
                       })}
