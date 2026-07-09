@@ -33,33 +33,43 @@ async function firebaseSet(key, value) {
 // ── Helpers ───────────────────────────────────────────────────
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
-function getMeta(order, key) {
-  const item = (order.meta_data || []).find(m => m.key === key);
-  return item?.value || '';
+function getMeta(order, ...keys) {
+  for (const key of keys) {
+    const item = (order.meta_data || []).find(m => m.key === key);
+    if (item?.value) return item.value;
+  }
+  return '';
 }
 
 function labelFromDateStr(dateStr) {
   if (!dateStr) return null;
+  // Handle YYYY-MM-DD format
+  const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const [, year, month, day] = match.map(Number);
   const DAYS = ['Dimanche','Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi'];
-  const [year, month, day] = dateStr.split('-').map(Number);
-  if (!year || !month || !day) return null;
   const d = new Date(year, month - 1, day);
   return `${DAYS[d.getDay()]} ${String(day).padStart(2,'0')}/${String(month).padStart(2,'0')}`;
 }
 
 function orderToBooking(order) {
-  const adults   = parseInt(getMeta(order, 'adult_number')  || getMeta(order, 'adults'))   || 1;
-  const children = parseInt(getMeta(order, 'child_number')  || getMeta(order, 'children')) || 0;
-  const date1    = getMeta(order, 'date_1') || getMeta(order, 'date_excursion') || '';
+  // Noms de champs WooCommerce Panamax (avec fallbacks)
+  const adults   = parseInt(getMeta(order, 'adult_number',  'nombre_adultes',  'adults',   'nb_adultes'))   || 1;
+  const children = parseInt(getMeta(order, 'child_number',  'nombre_enfants',  'children', 'nb_enfants'))   || 0;
+  const date1    = getMeta(order, 'date_1', 'date_privilegiee', 'date_preferentielle', 'date_excursion', 'date');
+  const date2    = getMeta(order, 'date_2', 'seconde_date_possible', 'date_repli', 'date_alternative');
   const notes    = [
-    getMeta(order, 'additional_informations'),
-    getMeta(order, 'informations_complementaires'),
+    getMeta(order, 'informations_complementaires', 'additional_informations', 'informations', 'notes', 'message'),
+    date2 ? `Date de repli : ${date2}` : '',
   ].filter(Boolean).join(' | ');
 
   const P_AD = 115, P_CH = 95;
   const name  = `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || `Commande #${order.id}`;
-  const phone = order.billing?.phone || '';
+  const phone = (order.billing?.phone || '').replace(/\s/g, '');
   const email = order.billing?.email || '';
+
+  // Log pour debug
+  console.log(`Order #${order.id} — adults:${adults} children:${children} date1:${date1} date2:${date2}`);
 
   return {
     id:            `woo-${order.id}-${uid()}`,
@@ -170,6 +180,20 @@ export default async function handler(req, res) {
     // ── Sauvegarder dans Firebase ──────────────────────────
     const saved = await firebaseSet(STORE_KEY, JSON.stringify(current));
     if (!saved) throw new Error('Échec sauvegarde Firebase');
+
+    // ── Notifier l'admin via Telegram ────────────────────
+    try {
+      const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+      const CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
+      if (BOT_TOKEN && CHAT_ID) {
+        const msg = `🌐 Nouvelle commande WooCommerce\n👤 ${booking.name}\n📅 ${dateLabel || 'Date non reconnue'}\n👥 ${booking.adults} adulte(s)${booking.children ? ` + ${booking.children} enfant(s)` : ''}\n💰 ${booking.price}€\n✉️ ${booking.email || 'Pas d\'email'}`;
+        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ chat_id: CHAT_ID, text: msg }),
+        });
+      }
+    } catch(e) { console.error('Telegram notify error:', e.message); }
 
     return res.status(200).json({
       success:  true,
