@@ -763,10 +763,10 @@ function ResellerPortal({ data, save }) {
             </FSelect>
           </div>
           <div style={{ marginBottom: 14 }}>
-            <PhoneInput prefixKey={form.phone_prefix||"+33"} onPrefixChange={v=>setForm(f=>({...f,phone_prefix:v}))} value={form.phone} onChange={v=>setForm(f=>({...f,phone:v}))} />
+            <FInput label="Nom du client" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom du client..." />
           </div>
           <div style={{ marginBottom: 14 }}>
-            <FInput label="Nom du client" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
+            <PhoneInput prefixKey={form.phone_prefix||"+33"} onPrefixChange={v=>setForm(f=>({...f,phone_prefix:v}))} value={form.phone} onChange={v=>setForm(f=>({...f,phone:v}))} />
           </div>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Email client" type="email" value={form.email||""} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemple.com" />
@@ -969,10 +969,10 @@ function ResellerPortal({ data, save }) {
             </FSelect>
           </div>
           <div style={{ marginBottom: 14 }}>
-            <PhoneInput prefixKey={editForm.phone_prefix||"+33"} onPrefixChange={v=>setEditForm(f=>({...f,phone_prefix:v}))} value={editForm.phone} onChange={v=>setEditForm(f=>({...f,phone:v}))} />
+            <FInput label="Nom du client" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom du client..." />
           </div>
           <div style={{ marginBottom: 14 }}>
-            <FInput label="Nom du client" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom, prénom..." />
+            <PhoneInput prefixKey={editForm.phone_prefix||"+33"} onPrefixChange={v=>setEditForm(f=>({...f,phone_prefix:v}))} value={editForm.phone} onChange={v=>setEditForm(f=>({...f,phone:v}))} />
           </div>
           <div style={{ marginBottom: 14 }}>
             <FInput label="Email client" type="email" value={editForm.email||""} onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} placeholder="email@exemple.com" />
@@ -2149,10 +2149,10 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           </FSelect>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <PhoneInput prefixKey={adding.form.phone_prefix||"+33"} onPrefixChange={v=>setAdding(a=>({...a,form:{...a.form,phone_prefix:v}}))} value={adding.form.phone} onChange={v=>setAdding(a=>({...a,form:{...a.form,phone:v}}))} />
+          <FInput label="Nom du client" value={adding.form.name} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, name: e.target.value } }))} placeholder="Nom du client..." />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <FInput label="Nom du client" value={adding.form.name} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
+          <PhoneInput prefixKey={adding.form.phone_prefix||"+33"} onPrefixChange={v=>setAdding(a=>({...a,form:{...a.form,phone_prefix:v}}))} value={adding.form.phone} onChange={v=>setAdding(a=>({...a,form:{...a.form,phone:v}}))} />
         </div>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Email client" type="email" value={adding.form.email||""} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, email: e.target.value } }))} placeholder="email@exemple.com" />
@@ -2222,10 +2222,10 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           </FSelect>
         </div>
         <div style={{ marginBottom: 14 }}>
-          <PhoneInput prefixKey={editing.form.phone_prefix||"+33"} onPrefixChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone_prefix:v}}))} value={editing.form.phone} onChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone:v}}))} />
+          <FInput label="Nom du client" value={editing.form.name} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, name: e.target.value } }))} placeholder="Nom du client..." />
         </div>
         <div style={{ marginBottom: 14 }}>
-          <FInput label="Nom du client" value={editing.form.name} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, name: e.target.value } }))} placeholder="Nom, prénom..." />
+          <PhoneInput prefixKey={editing.form.phone_prefix||"+33"} onPrefixChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone_prefix:v}}))} value={editing.form.phone} onChange={v=>setEditing(ed=>({...ed,form:{...ed.form,phone:v}}))} />
         </div>
         <div style={{ marginBottom: 14 }}>
           <FInput label="Email client" type="email" value={editing.form.email||""} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, email: e.target.value } }))} placeholder="email@exemple.com" />
