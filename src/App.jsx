@@ -830,19 +830,40 @@ function ResellerPortal({ data, save }) {
 
   // ── Mes réservations ──────────────────────
   if (step === "mes-resa") {
-    // Show confirmed bookings from this reseller across all dates
-    const pending = data.dates.flatMap(date =>
-      date.boats.flatMap(boat =>
+    // Show confirmed bookings from today onwards for this reseller
+    const todayMidnight = new Date(); todayMidnight.setHours(0,0,0,0);
+    const pending = data.dates.flatMap(date => {
+      const d = dateFromLabel(date.label);
+      if (!d || d < todayMidnight) return []; // Ignorer les dates passées
+      return date.boats.flatMap(boat =>
         boat.bookings
           .filter(bk => bk.source === identity)
           .map(bk => ({ ...bk, dateId: date.id, boatId: boat.id, dateLabel: date.label, boatName: boat.name }))
-      )
-    ).sort((a,b) => (dateFromLabel(a.dateLabel)||new Date(0)) - (dateFromLabel(b.dateLabel)||new Date(0)));
+      );
+    }).sort((a,b) => (dateFromLabel(a.dateLabel)||new Date(0)) - (dateFromLabel(b.dateLabel)||new Date(0)));
+    // Compteur acomptes de l'année en cours (toutes dates confondues, pas seulement futures)
+    const currentYear = new Date().getFullYear();
+    const totalAcomptesAnnee = data.dates.flatMap(date => {
+      const d = dateFromLabel(date.label);
+      if (!d || d.getFullYear() !== currentYear) return [];
+      return date.boats.flatMap(boat =>
+        boat.bookings.filter(bk => bk.source === identity).map(bk => bk.acompte_amount || 0)
+      );
+    }).reduce((s, v) => s + v, 0);
+
     return (
       <div style={{ flex: 1, padding: "0 20px 40px", maxWidth: 560, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
-        <button onClick={() => { setIdentity(null); setStep("cal"); }} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", borderRadius: 20, padding: "7px 18px", fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
+        <button onClick={() => { setIdentity(null); setStep("cal"); }} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", borderRadius: 20, padding: "7px 18px", fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
           ← Retour au calendrier
         </button>
+
+        {/* Compteur acomptes annuel */}
+        <div style={{ background: "rgba(255,255,255,0.15)", borderRadius: 16, padding: "16px 20px", marginBottom: 16, border: "1px solid rgba(255,255,255,0.2)" }}>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginBottom: 4 }}>💰 Mes acomptes encaissés {currentYear}</div>
+          <div style={{ fontSize: 30, fontWeight: 800, color: "#fff" }}>{fmtEur(totalAcomptesAnnee)}</div>
+          <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", marginTop: 3 }}>Se renouvelle le 1er janvier</div>
+        </div>
+
         <div style={{ background: "#fff", borderRadius: 20, padding: 24 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
             <h2 style={{ margin: 0, color: DARK, fontSize: 18 }}>📋 Mes réservations</h2>
@@ -854,7 +875,7 @@ function ResellerPortal({ data, save }) {
           {pending.length === 0 ? (
             <div style={{ textAlign: "center", padding: "40px 0", color: "#aaa" }}>
               <div style={{ fontSize: 40, marginBottom: 10 }}>📭</div>
-              <p>Aucune demande en attente.</p>
+              <p>Aucune réservation à venir.</p>
               <Btn onClick={() => setStep("cal")} style={{ marginTop: 12 }}>Faire une réservation</Btn>
             </div>
           ) : pending.map(p => {
@@ -881,9 +902,12 @@ function ResellerPortal({ data, save }) {
                   </Row>
                 </>);})()}
                   {p.notes && <div>📝 {p.notes}</div>}
-                  {p.discount > 0 && <div style={{ color: GREEN, fontSize: 12 }}>Remise : -{fmtEur(p.discount)}</div>}
-                  {p.acompte_amount > 0 && <div style={{ color: "#888", fontSize: 12 }}>Acompte : {fmtEur(p.acompte_amount)} · Reste à payer : <strong style={{ color: CORAL }}>{fmtEur(Math.max(0,p.price-(p.acompte_amount||0)))}</strong></div>}
-                  <div style={{ color: TEAL, fontWeight: 700 }}>💰 {fmtEur(p.adults * P_AD + p.children * P_CH)}</div>
+                  {p.acompte_amount > 0 && (
+                    <div style={{ marginTop: 8, background: "#F0F8FB", borderRadius: 8, padding: "8px 12px", border: `1px solid ${TEAL}20` }}>
+                      <div style={{ fontSize: 12, color: "#888", marginBottom: 2 }}>💰 Acompte encaissé</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: TEAL }}>{fmtEur(p.acompte_amount)}</div>
+                    </div>
+                  )}
                 </div>
                 {isPendingDel ? (
                   <Row gap={8}>
