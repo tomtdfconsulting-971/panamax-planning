@@ -2754,10 +2754,15 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
         </>)}
 
         {/* ── Comptabilité tab ── */}
+        {tab === "stats"  && <StatsTab data={data} sources={sources} />}
+
         {tab === "compta" && <ComptaTab data={data} sources={sources} />}
 
         {/* ── Skippers management tab ── */}
         {tab === "skippers_mgmt" && <SkippersMgmtTab skData={skData} saveSkData={saveSkData} data={data} />}
+
+        {/* ── Référents tab ── */}
+        {tab === "revendeurs" && <RevendeursTab sources={sources} saveSources={saveSources} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
