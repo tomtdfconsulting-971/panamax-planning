@@ -164,7 +164,7 @@ const fullPhone = (bk) => {
 const boatPax  = b  => b.bookings.reduce((s, bk) => s + bk.adults + bk.children, 0);
 const boatRev  = b  => b.bookings.reduce((s, bk) => s + bk.price, 0);
 const fmtEur   = n  => n.toLocaleString("fr") + "€";
-const spots    = b  => Math.max(0, MAX_CAP - boatPax(b));
+const spots    = b  => b.closed ? 0 : Math.max(0, MAX_CAP - boatPax(b));
 const pct      = b  => Math.min((boatPax(b) / MAX_CAP) * 100, 100);
 const barColor = b  => pct(b) >= 100 ? CORAL : pct(b) > 70 ? ORANGE : GREEN;
 
@@ -640,17 +640,19 @@ function ResellerPortal({ data, save }) {
             const bc = barColor(boat);
             const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
             const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
+            const unavailable = full || boat.closed;
             return (
-              <button key={boat.id} onClick={() => { if (!full) { setSelBoat(boat); setStep("form"); } }} disabled={full}
-                style={{ border: `2px solid ${full ? "#eee" : TEAL}`, borderRadius: 16, padding: 20, cursor: full ? "not-allowed" : "pointer", background: full ? "#fafafa" : "#EBF7FA", textAlign: "left", opacity: full ? 0.55 : 1, position: "relative" }}>
-                <div style={{ position: "absolute", top: 14, right: 14, background: full ? "#FEF0EB" : "#E8F8F1", color: full ? CORAL : GREEN, fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 10 }}>
-                  {full ? "Complet 🚫" : `${r} place(s) libre`}
+              <button key={boat.id} onClick={() => { if (!unavailable) { setSelBoat(boat); setStep("form"); } }} disabled={unavailable}
+                style={{ border: `2px solid ${unavailable ? "#eee" : TEAL}`, borderRadius: 16, padding: 20, cursor: unavailable ? "not-allowed" : "pointer", background: boat.closed ? "#FEF8F6" : full ? "#fafafa" : "#EBF7FA", textAlign: "left", opacity: unavailable ? 0.6 : 1, position: "relative" }}>
+                <div style={{ position: "absolute", top: 14, right: 14, background: boat.closed ? "#FEF0EB" : full ? "#FEF0EB" : "#E8F8F1", color: boat.closed ? CORAL : full ? CORAL : GREEN, fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 10 }}>
+                  {boat.closed ? "🚫 Off" : full ? "Complet 🚫" : `${r} place(s) libre`}
                 </div>
                 <Row gap={14} style={{ marginBottom: 14 }}>
                   <span style={{ fontSize: 36 }}>{icon}</span>
                   <div>
                     <div style={{ fontWeight: 800, fontSize: 18, color: DARK }}>{displayName}</div>
                     <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>Capacité max : {MAX_CAP} personnes</div>
+                    {boat.closed && <div style={{ fontSize: 12, fontWeight: 700, color: CORAL, marginTop: 4 }}>🚫 Fermé à la vente</div>}
                   </div>
                 </Row>
                 <div style={{ height: 10, borderRadius: 5, background: "#e0eef3", overflow: "hidden", marginBottom: 8 }}>
@@ -1064,7 +1066,7 @@ function ResellerPortal({ data, save }) {
                           <Row style={{ marginBottom:4 }}>
                             <span style={{ fontSize:14 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
                             <span style={{ fontSize:13, fontWeight:700, color:"#fff", flex:1, marginLeft:6 }}>{boat.name==="Aloes Vera"?"Aloès Vera":"Panamax"}</span>
-                            <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":"#FA9F6A" }}>{r<=0?"Complet 🚫":`Reste ${r} place${r>1?"s":""}`}</span>
+                            <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":boat.closed?"rgba(255,255,255,0.4)":"#FA9F6A" }}>{boat.closed?"🚫 Off":r<=0?"Complet":r>0?`Reste ${r} place${r>1?"s":""}`:""}</span>
                           </Row>
                           <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.15)", overflow:"hidden" }}>
                             <div style={{ height:"100%", width:`${p}%`, background:isPast?"rgba(255,255,255,0.2)":bc, borderRadius:2 }}/>
@@ -1148,7 +1150,7 @@ function ResellerPortal({ data, save }) {
                     <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 4, padding: "2px 4px", overflow: "hidden", minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2, minWidth: 0 }}>
                         <span style={{ fontSize: 9, lineHeight: 1, flexShrink: 0 }}>{boat.name === "Aloes Vera" ? "🛥️" : "🚤"}</span>
-                        <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A", flexShrink: 0, marginLeft: 1 }}>{r <= 0 ? "✕" : `R${r}`}</span>
+                        <span style={{ fontSize: 8, fontWeight: 700, color: boat.closed ? "#bbb" : r <= 0 ? CORAL : "#FA9F6A", flexShrink: 0, marginLeft: 1 }}>{boat.closed ? "Off" : r <= 0 ? "✕" : `R${r}`}</span>
                       </div>
                       <div style={{ height: 2, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${p}%`, background: bc, borderRadius: 2 }} />
@@ -2298,17 +2300,31 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
             const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
             return (
-              <div key={boat.id} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #deeaf0" }}>
+              <div key={boat.id} style={{ background: boat.closed ? "#FEF8F6" : "#fff", borderRadius: 12, padding: "14px 16px", border: `1px solid ${boat.closed ? CORAL+"40" : "#deeaf0"}` }}>
                 <Row style={{ marginBottom: 8 }}>
                   <span style={{ fontSize: 18 }}>{icon}</span>
                   <span style={{ fontWeight: 700, color: DARK, flex: 1, fontSize: 14 }}>{displayName}</span>
-                  <span style={{ fontWeight: 700, color: TEAL, fontSize: 13 }}>{fmtEur(boatRev(boat))}</span>
+                  {boat.closed
+                    ? <span style={{ fontSize: 11, fontWeight: 700, background: "#FEF0EB", color: CORAL, padding: "3px 9px", borderRadius: 7 }}>🚫 Off</span>
+                    : <span style={{ fontWeight: 700, color: TEAL, fontSize: 13 }}>{fmtEur(boatRev(boat))}</span>
+                  }
                 </Row>
                 <CapBar boat={boat} />
-                <button onClick={() => { setAddBoat(boat); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); setAdminStep("add-form"); }}
-                  style={{ marginTop: 10, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: TEAL, border: "none", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
-                  + Ajouter une réservation
+                {/* Toggle fermeture */}
+                <button onClick={() => {
+                  const next = { ...data, dates: data.dates.map(d => d.id !== entry.id ? d : {
+                    ...d, boats: d.boats.map(b => b.id !== boat.id ? b : { ...b, closed: !b.closed })
+                  })};
+                  save(next);
+                }} style={{ marginTop: 8, width: "100%", padding: "7px", borderRadius: 7, border: `1px solid ${boat.closed ? GREEN+"60" : CORAL+"60"}`, background: boat.closed ? "#E8F8F1" : "#FEF0EB", color: boat.closed ? GREEN : CORAL, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+                  {boat.closed ? "✅ Ré-ouvrir à la vente" : "🚫 Fermer à la vente"}
                 </button>
+                {!boat.closed && (
+                  <button onClick={() => { setAddBoat(boat); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); setAdminStep("add-form"); }}
+                    style={{ marginTop: 6, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: TEAL, border: "none", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+                    + Ajouter une réservation
+                  </button>
+                )}
               </div>
             );
           })}
@@ -3443,7 +3459,10 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                 <Row>
                   <span style={{ fontSize:20 }}>{icon}</span>
                   <span style={{ fontWeight:800, color:TEAL, fontSize:15, flex:1, marginLeft:8 }}>{dname}</span>
-                  <span style={{ fontSize:12, color:"#888" }}>{boatPax(boat)} pax</span>
+                  {boat.closed
+                    ? <span style={{ fontSize:11, fontWeight:700, background:"#FEF0EB", color:CORAL, padding:"2px 8px", borderRadius:6 }}>🚫 Off</span>
+                    : <span style={{ fontSize:12, color:"#888" }}>{boatPax(boat)} pax</span>
+                  }
                   {totalReste > 0 && <span style={{ fontSize:12, fontWeight:700, color:CORAL, marginLeft:10 }}>À encaisser : {fmtEur(totalReste)}</span>}
                 </Row>
               </div>
@@ -3607,6 +3626,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                 <span style={{ fontSize:11, fontWeight:isToday?800:500, color:isToday?"#fff":isMine?skipperUser.color:DARK }}>{cell.getDate()}</span>
                 {aloesSk && <div style={{ fontSize:7, background:aloesSk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🛥 {aloesSk.name}</div>}
                 {panaSkk  && <div style={{ fontSize:7, background:panaSkk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🚤 {panaSkk.name}</div>}
+                {(() => { const d = data.dates.find(x=>x.label===label); if(!d) return null; return d.boats.filter(b=>b.closed).map(b=><div key={b.id} style={{ fontSize:7, background:"#ddd", color:"#888", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{b.name==="Aloes Vera"?"🛥":"🚤"} Off</div>); })()}
               </div>
             );
           })}
