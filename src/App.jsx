@@ -2942,6 +2942,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
   const [editForm, setEditForm] = useState({});
   const [addingSk, setAddingSk] = useState(false);
   const [newSk,    setNewSk]    = useState({ name:"", pin:"", color:"#2471A3" });
+  const [dayModal, setDayModal] = useState(null); // remonté ici pour ne pas perdre le focus
 
   const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
   const planning = skData?.planning || {};
@@ -2985,7 +2986,6 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
   const SK_COLORS = ["#2471A3","#8E44AD","#C0392B","#1E8449","#E67E22","#16A085","#1A5F7A","#7F8C8D"];
 
   const PlanningView = () => {
-    const [dayModal, setDayModal] = useState(null);
     return (
       <div>
         <Row style={{ justifyContent:"space-between", marginBottom:14 }}>
@@ -3169,9 +3169,9 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
           <button key={v} onClick={()=>setTab(v)} style={{ background:tab===v?"#fff":"transparent", border:"none", borderRadius:8, padding:"7px 14px", cursor:"pointer", fontSize:12, fontWeight:tab===v?700:400, color:tab===v?TEAL:"#888", boxShadow:tab===v?"0 1px 4px rgba(0,0,0,0.1)":"none" }}>{lbl}</button>
         ))}
       </div>
-      {tab==="planning" && <PlanningView />}
-      {tab==="accounts" && <AccountsView />}
-      {tab==="recap"    && <RecapView />}
+      {tab==="planning" && PlanningView()}
+      {tab==="accounts" && AccountsView()}
+      {tab==="recap"    && RecapView()}
       {notif&&<div style={{ position:"fixed",bottom:22,left:"50%",transform:"translateX(-50%)",background:notif.ok?TEAL:CORAL,color:"#fff",padding:"10px 24px",borderRadius:28,fontSize:14,fontWeight:600,zIndex:9999 }}>{notif.msg}</div>}
     </div>
   );
@@ -3222,6 +3222,16 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
   const [payForm, setPayForm] = useState([]);          // [{ methode, montant }]
   const [notif,   setNotif]   = useState(null);
   const [exchReq, setExchReq] = useState(null);       // exchange request being composed
+
+  // ── États des sous-vues, remontés ici pour éviter la perte de focus ──
+  const [openBkId,   setOpenBkId]   = useState(null);            // TodayTab
+  const [selEntry,   setSelEntry]   = useState(null);            // AllDatesTab
+  const [selBkPay,   setSelBkPay]   = useState(null);            // AllDatesTab
+  const [payFormAll, setPayFormAll] = useState([]);              // AllDatesTab
+  const [curMonth,   setCurMonth]   = useState(today.getMonth());     // PlanningTab
+  const [curYear,    setCurYear]    = useState(today.getFullYear());  // PlanningTab
+  const [mySlot,     setMySlot]     = useState(null);            // ExchangeTab
+  const [theirSlot,  setTheirSlot]  = useState(null);            // ExchangeTab
 
   const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
 
@@ -3303,9 +3313,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
   // ── ALL DATES TAB ─────────────────────────────────────────
   const AllDatesTab = () => {
-    const [selEntry, setSelEntry] = useState(null); // date entry selected for detail
-    const [selBkPay, setSelBkPay] = useState(null);
-    const [payFormAll, setPayFormAll] = useState([]);
 
     // Sort all dates chronologically — today and future only
     const todayMidnight = new Date(new Date().setHours(0,0,0,0));
@@ -3517,7 +3524,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
   // ── TODAY TAB ──────────────────────────────────────────────
   const TodayTab = () => {
-    const [openBkId, setOpenBkId] = useState(null);
 
     if (!todayEntry) return (
       <div style={{ textAlign:"center", padding:"40px 16px", color:"#888" }}>
@@ -3680,9 +3686,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
   // ── PLANNING TAB ───────────────────────────────────────────
   const PlanningTab = () => {
-    const today = new Date();
-    const [curMonth, setCurMonth] = useState(today.getMonth());
-    const [curYear,  setCurYear]  = useState(today.getFullYear());
     const prevMonth = () => { if(curMonth===0){setCurYear(y=>y-1);setCurMonth(11);}else setCurMonth(m=>m-1); };
     const nextMonth = () => { if(curMonth===11){setCurYear(y=>y+1);setCurMonth(0);}else setCurMonth(m=>m+1); };
 
@@ -3776,8 +3779,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
     const planning  = skData?.planning || {};
     const allSkippers = skData?.skippers || [];
     const otherSkipper = allSkippers.find(s => s.id !== skipperUser.id);
-    const [mySlot,    setMySlot]    = useState(null); // { label, boatKey }
-    const [theirSlot, setTheirSlot] = useState(null);
 
     // My upcoming slots
     const mySlots = Object.entries(planning)
@@ -3889,10 +3890,10 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
       </div>
 
       <div style={{ maxWidth:700, margin:"0 auto", padding:"14px 14px 80px" }}>
-        {tab === "today"    && <TodayTab />}
-        {tab === "all"      && <AllDatesTab />}
-        {tab === "planning" && <PlanningTab />}
-        {tab === "exchange" && <ExchangeTab />}
+        {tab === "today"    && TodayTab()}
+        {tab === "all"      && AllDatesTab()}
+        {tab === "planning" && PlanningTab()}
+        {tab === "exchange" && ExchangeTab()}
       </div>
 
       {notif && <div style={{ position:"fixed", bottom:22, left:"50%", transform:"translateX(-50%)", background:notif.ok?TEAL:CORAL, color:"#fff", padding:"10px 24px", borderRadius:28, fontSize:14, fontWeight:600, zIndex:9999, whiteSpace:"nowrap" }}>{notif.msg}</div>}
