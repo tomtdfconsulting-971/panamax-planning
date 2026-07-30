@@ -7,6 +7,7 @@ const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const EMAILJS_SERVICE   = process.env.EMAILJS_SERVICE_ID;
 const EMAILJS_TEMPLATE  = process.env.EMAILJS_REMINDER_TEMPLATE_ID;
 const EMAILJS_KEY       = process.env.EMAILJS_PUBLIC_KEY;
+const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY; // optionnelle (mode strict)
 const STORE_KEY         = 'panamax-v3';
 
 // ── Authentification Firebase (anonyme, comme l'app) ──────────
@@ -102,24 +103,33 @@ async function createStripeLink(amount, clientName, clientEmail, dateLabel, book
 }
 
 async function sendReminderEmail(to_name, to_email, date, reste, paymentUrl) {
+  const payload = {
+    service_id:  EMAILJS_SERVICE,
+    template_id: EMAILJS_TEMPLATE,
+    user_id:     EMAILJS_KEY,
+    template_params: {
+      to_name,
+      to_email,
+      date,
+      reste:       `${reste}€`,
+      payment_url: paymentUrl,
+      reply_to:    'contact@panamaxexcursions.com',
+    },
+  };
+  // La clé privée est requise pour les appels serveur en mode strict
+  if (EMAILJS_PRIVATE_KEY) payload.accessToken = EMAILJS_PRIVATE_KEY;
+
   const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      service_id:  EMAILJS_SERVICE,
-      template_id: EMAILJS_TEMPLATE,
-      user_id:     EMAILJS_KEY,
-      template_params: {
-        to_name,
-        to_email,
-        date,
-        reste:       `${reste}€`,
-        payment_url: paymentUrl,
-        reply_to:    'contact@panamaxexcursions.com',
-      },
-    }),
+    headers: { 'Content-Type': 'application/json', 'origin': 'https://panamax-planning.vercel.app' },
+    body: JSON.stringify(payload),
   });
-  return res.ok;
+  if (res.ok) return { ok: true };
+
+  // On remonte le message exact d'EmailJS
+  const msg = (await res.text()).slice(0, 200);
+  console.error(`EmailJS (${to_email}) : ${res.status} — ${msg}`);
+  return { ok: false, error: `${res.status} — ${msg}` };
 }
 
 export default async function handler(req, res) {
@@ -189,14 +199,15 @@ export default async function handler(req, res) {
           }
 
           // Envoyer l'email de rappel
-          const ok = await sendReminderEmail(bk.name, bk.email, date.label, reste, paymentUrl);
+          const mail = await sendReminderEmail(bk.name, bk.email, date.label, reste, paymentUrl);
 
-          if (ok) {
+          if (mail.ok) {
             marked.push(bk.id);   // marqueur appliqué plus tard sur une copie fraîche
             sent++;
           }
 
-          results.push({ name: bk.name, email: bk.email, date: date.label, joursAvant: diff, reste, sent: ok });
+          results.push({ name: bk.name, email: bk.email, date: date.label, joursAvant: diff, reste,
+                         sent: mail.ok, ...(mail.error ? { erreurEmail: mail.error } : {}) });
           console.log(`Rappel J-${diff} → ${bk.name} (${bk.email}) — ${reste}€ — ${date.label}`);
         }
       }
