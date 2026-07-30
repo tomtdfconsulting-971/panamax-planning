@@ -17,6 +17,16 @@ async function firebaseGet(key) {
   return doc?.fields?.value?.stringValue || null;
 }
 
+async function firebaseSet(key, value) {
+  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/panamax/${key}?key=${FIREBASE_API_KEY}`;
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { value: { stringValue: value }, updatedAt: { integerValue: String(Date.now()) } } }),
+  });
+  return res.ok;
+}
+
 function dateFromLabel(label) {
   if (!label) return null;
   const m = label.match(/(\d{1,2})\/(\d{2})/);
@@ -75,10 +85,28 @@ async function sendReminderEmail(to_name, to_email, date, reste, paymentUrl) {
 }
 
 export default async function handler(req, res) {
-  // Sécurité : seul Vercel Cron peut appeler cet endpoint
+  // Sécurité : Vercel Cron (header) OU test manuel (?secret=...)
   const authHeader = req.headers.authorization;
-  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return res.status(401).json({ error: 'Non autorisé' });
+  const secretQS   = req.query?.secret;
+  const ok = authHeader === `Bearer ${process.env.CRON_SECRET}` || secretQS === process.env.CRON_SECRET;
+  if (!ok) return res.status(401).json({ error: 'Non autorisé' });
+
+  // ?days=N pour tester sur un autre horizon (défaut : 7 jours)
+  const horizon = parseInt(req.query?.days) || 7;
+  // ?dry=1 pour simuler sans envoyer d'email
+  const dryRun  = req.query?.dry === '1';
+
+  // Diagnostic de configuration
+  const config = {
+    EMAILJS_SERVICE_ID:           !!EMAILJS_SERVICE,
+    EMAILJS_REMINDER_TEMPLATE_ID: !!EMAILJS_TEMPLATE,
+    EMAILJS_PUBLIC_KEY:           !!EMAILJS_KEY,
+    STRIPE_SECRET_KEY:            !!STRIPE_SECRET_KEY,
+    FIREBASE_WEB_API_KEY:         !!FIREBASE_API_KEY,
+  };
+  const missing = Object.entries(config).filter(([, v]) => !v).map(([k]) => k);
+  if (missing.length) {
+    return res.status(500).json({ error: 'Variables Vercel manquantes', missing });
   }
 
   try {
@@ -86,47 +114,85 @@ export default async function handler(req, res) {
     if (!raw) return res.status(200).json({ message: 'Aucune donnée' });
     const current = JSON.parse(raw);
 
-    const today   = new Date();
+    const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const target  = new Date(today);
-    target.setDate(today.getDate() + 7); // J+7
 
     let sent = 0;
+    const marked  = [];            // IDs des réservations ayant reçu le rappel
     const results = [];
+    const skipped = [];
 
     for (const date of current.dates) {
       const dateObj = dateFromLabel(date.label);
       if (!dateObj) continue;
 
-      // Vérifier si c'est J+7
+      // Fenêtre glissante : excursion dans 0 à `horizon` jours (7 par défaut)
       const diff = Math.round((dateObj - today) / (1000 * 60 * 60 * 24));
-      if (diff !== 7) continue;
+      if (diff < 0 || diff > horizon) continue;
 
       for (const boat of date.boats) {
         for (const bk of boat.bookings) {
-          // Ne pas renvoyer si déjà payé via Stripe
-          if (bk.stripe_paid) continue;
-
           const reste = Math.max(0, bk.price - (bk.acompte_amount || 0) - (bk.solde_encaisse || 0));
-          if (reste <= 0) continue;
-          if (!bk.email) continue;
+
+          // Raisons de ne pas envoyer — tracées pour le diagnostic
+          if (bk.reminder_sent) { skipped.push({ name: bk.name, raison: 'rappel déjà envoyé' });   continue; }
+          if (bk.stripe_paid)   { skipped.push({ name: bk.name, raison: 'déjà payé via Stripe' }); continue; }
+          if (reste <= 0)     { skipped.push({ name: bk.name, raison: 'solde déjà réglé' });      continue; }
+          if (!bk.email)      { skipped.push({ name: bk.name, raison: 'pas d\'email client' });   continue; }
 
           // Générer le lien Stripe
           const paymentUrl = await createStripeLink(reste, bk.name, bk.email, date.label, bk.id, date.id, boat.id);
-          if (!paymentUrl) continue;
+          if (!paymentUrl) { skipped.push({ name: bk.name, raison: 'échec génération lien Stripe' }); continue; }
+
+          if (dryRun) {
+            results.push({ name: bk.name, email: bk.email, date: date.label, joursAvant: diff, reste, payment_url: paymentUrl, sent: 'SIMULATION' });
+            continue;
+          }
 
           // Envoyer l'email de rappel
           const ok = await sendReminderEmail(bk.name, bk.email, date.label, reste, paymentUrl);
 
-          results.push({ name: bk.name, email: bk.email, date: date.label, reste, sent: ok });
-          if (ok) sent++;
+          if (ok) {
+            marked.push(bk.id);   // marqueur appliqué plus tard sur une copie fraîche
+            sent++;
+          }
 
-          console.log(`Rappel J-7 → ${bk.name} (${bk.email}) — ${reste}€ — ${date.label}`);
+          results.push({ name: bk.name, email: bk.email, date: date.label, joursAvant: diff, reste, sent: ok });
+          console.log(`Rappel J-${diff} → ${bk.name} (${bk.email}) — ${reste}€ — ${date.label}`);
         }
       }
     }
 
-    return res.status(200).json({ success: true, sent, results });
+    // ── Sauvegarde des marqueurs ────────────────────────────────
+    // On relit Firebase juste avant d'écrire : entre-temps un skipper a pu
+    // encaisser un solde. On applique uniquement les marqueurs sur cette
+    // version fraîche, sans écraser les autres modifications.
+    let markersSaved = false;
+    if (marked.length && !dryRun) {
+      const fresh = await firebaseGet(STORE_KEY);
+      if (fresh) {
+        const data2 = JSON.parse(fresh);
+        const stamp = new Date().toISOString();
+        for (const d of data2.dates) {
+          for (const b of d.boats) {
+            for (const bk of b.bookings) {
+              if (marked.includes(bk.id)) {
+                bk.reminder_sent    = true;
+                bk.reminder_sent_at = stamp;
+              }
+            }
+          }
+        }
+        markersSaved = await firebaseSet(STORE_KEY, JSON.stringify(data2));
+      }
+      if (!markersSaved) console.error('⚠️ Échec sauvegarde des marqueurs — risque de doublon demain');
+    }
+
+    return res.status(200).json({
+      success: true,
+      fenetre: `excursions dans 0 à ${horizon} jour(s)`,
+      dryRun, sent, marques: marked.length, markersSaved, results, skipped,
+    });
 
   } catch (err) {
     console.error('send-reminders error:', err);
