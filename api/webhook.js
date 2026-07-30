@@ -6,27 +6,46 @@ const FIREBASE_PROJECT = process.env.FIREBASE_PROJECT_ID || 'panamax-planning';
 const FIREBASE_API_KEY = process.env.FIREBASE_WEB_API_KEY; // clé web publique Firebase
 
 // ── Firebase REST helper ───────────────────────────────────────
+// ── Authentification Firebase (anonyme, comme l'app) ──────────
+// Les règles Firestore exigent un utilisateur authentifié : on obtient
+// un jeton anonyme avant chaque lecture/écriture.
+let _tok = null, _tokExp = 0;
+async function getIdToken() {
+  if (_tok && Date.now() < _tokExp) return _tok;
+  try {
+    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ returnSecureToken: true }),
+    });
+    const d = await r.json();
+    if (!d.idToken) { console.error('Auth Firebase échouée:', d.error?.message); return null; }
+    _tok = d.idToken;
+    _tokExp = Date.now() + 50 * 60 * 1000;   // jeton valable 1h, on garde une marge
+    return _tok;
+  } catch (e) { console.error('Auth Firebase erreur:', e.message); return null; }
+}
+
 async function firebaseGet(key) {
-  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/panamax/${key}?key=${FIREBASE_API_KEY}`;
-  const res = await fetch(url);
-  if (!res.ok) return null;
+  const token = await getIdToken();
+  if (!token) return null;
+  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/panamax/${key}`;
+  const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
+  if (!res.ok) { console.error('Firestore lecture refusée:', res.status, await res.text()); return null; }
   const doc = await res.json();
   return doc?.fields?.value?.stringValue || null;
 }
 
 async function firebaseSet(key, value) {
-  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/panamax/${key}?key=${FIREBASE_API_KEY}`;
-  const body = {
-    fields: {
-      value:     { stringValue: value },
-      updatedAt: { integerValue: String(Date.now()) },
-    }
-  };
+  const token = await getIdToken();
+  if (!token) return false;
+  const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/panamax/${key}`;
   const res = await fetch(url, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+    body: JSON.stringify({ fields: { value: { stringValue: value }, updatedAt: { integerValue: String(Date.now()) } } }),
   });
+  if (!res.ok) console.error('Firestore écriture refusée:', res.status, await res.text());
   return res.ok;
 }
 
