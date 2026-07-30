@@ -62,30 +62,43 @@ function dateFromLabel(label) {
 
 async function createStripeLink(amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId) {
   const APP_URL = 'https://panamax-planning.vercel.app';
+
+  // NB : Stripe plafonne la durée de vie d'une session à 24 h.
+  // On laisse donc la valeur par défaut (pas de champ `expires_at`).
+  const params = {
+    'payment_method_types[]':                                   'card',
+    'mode':                                                     'payment',
+    'success_url':                                              `${APP_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+    'cancel_url':                                               `${APP_URL}/payment-cancel`,
+    'line_items[0][price_data][currency]':                      'eur',
+    'line_items[0][price_data][unit_amount]':                   String(Math.round(amount * 100)),
+    'line_items[0][price_data][product_data][name]':            `Excursion Panamax — ${dateLabel}`,
+    'line_items[0][price_data][product_data][description]':     `Solde de réservation pour ${clientName}`,
+    'line_items[0][quantity]':                                  '1',
+    'metadata[booking_id]':   bookingId  || '',
+    'metadata[date_id]':      dateId     || '',
+    'metadata[boat_id]':      boatId     || '',
+    'metadata[client_name]':  clientName || '',
+    'metadata[date_label]':   dateLabel  || '',
+  };
+  // Stripe refuse une adresse vide : on ne l'ajoute que si elle est valide
+  if (clientEmail && clientEmail.includes('@') && clientEmail.includes('.')) {
+    params['customer_email'] = clientEmail.trim();
+  }
+
   const res = await fetch('https://api.stripe.com/v1/checkout/sessions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${STRIPE_SECRET_KEY}`, 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      'payment_method_types[]':                                   'card',
-      'mode':                                                     'payment',
-      'success_url':                                              `${APP_URL}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-      'cancel_url':                                               `${APP_URL}/payment-cancel`,
-      'customer_email':                                           clientEmail || '',
-      'line_items[0][price_data][currency]':                      'eur',
-      'line_items[0][price_data][unit_amount]':                   String(Math.round(amount * 100)),
-      'line_items[0][price_data][product_data][name]':            `Excursion Panamax — ${dateLabel}`,
-      'line_items[0][price_data][product_data][description]':     `Solde de réservation pour ${clientName}`,
-      'line_items[0][quantity]':                                  '1',
-      'metadata[booking_id]':   bookingId,
-      'metadata[date_id]':      dateId,
-      'metadata[boat_id]':      boatId,
-      'metadata[client_name]':  clientName,
-      'metadata[date_label]':   dateLabel,
-      'expires_at':             String(Math.floor(Date.now()/1000) + 7 * 24 * 3600), // expire dans 7 jours
-    }).toString(),
+    body: new URLSearchParams(params).toString(),
   });
   const session = await res.json();
-  return session.url || null;
+  if (!session.url) {
+    // On remonte la vraie erreur Stripe au lieu de l'avaler
+    const msg = session.error?.message || 'réponse Stripe inattendue';
+    console.error(`Stripe (${clientName}) :`, msg);
+    return { error: msg };
+  }
+  return { url: session.url };
 }
 
 async function sendReminderEmail(to_name, to_email, date, reste, paymentUrl) {
@@ -166,8 +179,9 @@ export default async function handler(req, res) {
           if (!bk.email)      { skipped.push({ name: bk.name, raison: 'pas d\'email client' });   continue; }
 
           // Générer le lien Stripe
-          const paymentUrl = await createStripeLink(reste, bk.name, bk.email, date.label, bk.id, date.id, boat.id);
-          if (!paymentUrl) { skipped.push({ name: bk.name, raison: 'échec génération lien Stripe' }); continue; }
+          const stripeRes  = await createStripeLink(reste, bk.name, bk.email, date.label, bk.id, date.id, boat.id);
+          if (stripeRes.error) { skipped.push({ name: bk.name, raison: `Stripe : ${stripeRes.error}` }); continue; }
+          const paymentUrl = stripeRes.url;
 
           if (dryRun) {
             results.push({ name: bk.name, email: bk.email, date: date.label, joursAvant: diff, reste, payment_url: paymentUrl, sent: 'SIMULATION' });
