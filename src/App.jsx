@@ -17,6 +17,8 @@ const CORAL     = "#E8673A";
 const DARK      = "#0D3D52";
 const GREEN     = "#1E8449";
 const ORANGE    = "#E67E22";
+const RED       = "#D6202A";   // Complet — rouge vif très visible
+const RED_BG    = "#FDE8E7";   // Fond rosé pour cartes complètes
 
 const DAYS_SHORT = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"];
 const DAYS_LONG  = ["Dimanche","Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi"];
@@ -61,6 +63,13 @@ function validatePhone(prefix, number) {
   const found = PHONE_PREFIXES.find(p => p.code === prefix);
   if (!found) return true;
   return found.len.includes(digits.length);
+}
+
+// Téléphone obligatoire : doit être rempli ET valide
+function phoneOk(form) {
+  const digits = (form.phone || "").replace(/[^0-9]/g, "");
+  if (!digits) return false;                                  // vide → refusé
+  return validatePhone(form.phone_prefix || "+33", form.phone) !== false;
 }
 
 // ── Utils ──────────────────────────────────────────────────────
@@ -166,7 +175,7 @@ const boatRev  = b  => b.bookings.reduce((s, bk) => s + bk.price, 0);
 const fmtEur   = n  => n.toLocaleString("fr") + "€";
 const spots    = b  => b.closed ? 0 : Math.max(0, MAX_CAP - boatPax(b));
 const pct      = b  => Math.min((boatPax(b) / MAX_CAP) * 100, 100);
-const barColor = b  => pct(b) >= 100 ? CORAL : pct(b) > 70 ? ORANGE : GREEN;
+const barColor = b  => pct(b) >= 100 ? RED : pct(b) > 70 ? ORANGE : GREEN;
 
 // Format a JS Date → "Mercredi 29/05"
 function labelFromDate(d) {
@@ -455,7 +464,7 @@ const CapBar = ({ boat }) => {
     <div>
       <Row style={{ justifyContent: "space-between", fontSize: 11, color: "#888", marginBottom: 3 }}>
         <span>{boatPax(boat)}/{MAX_CAP}</span>
-        <span style={{ fontWeight: 700, color: p >= 100 ? CORAL : GREEN }}>{p >= 100 ? "COMPLET 🚫" : `${spots(boat)} libre(s)`}</span>
+        <span style={{ fontWeight: 800, color: p >= 100 ? "#fff" : GREEN, background: p >= 100 ? RED : "transparent", borderRadius: 6, padding: p >= 100 ? "1px 8px" : 0 }}>{p >= 100 ? "COMPLET 💥" : `${spots(boat)} libre(s)`}</span>
       </Row>
       <div style={{ height: 5, borderRadius: 3, background: "#eef3f5", overflow: "hidden" }}>
         <div style={{ height: "100%", width: `${p}%`, background: barColor(boat), borderRadius: 3 }} />
@@ -564,6 +573,17 @@ function ResellerPortal({ data, save }) {
 
   // Submit booking
   const submit = () => {
+    // ── Double sécurité : capacité max 12 passagers ──
+    const totalPax = form.adults + form.children;
+    if (totalPax > spots(selBoat)) {
+      alert(`💥 Capacité dépassée !\n\nCe bateau ne dispose que de ${spots(selBoat)} place(s).\nVous avez sélectionné ${totalPax} passager(s).`);
+      return;
+    }
+    if (!phoneOk(form)) {
+      alert("📞 Le numéro de téléphone du client est obligatoire et doit être valide.");
+      return;
+    }
+
     let nextData = data;
     let dateId   = selDate.id;
     let boatId   = selBoat.id;
@@ -643,9 +663,9 @@ function ResellerPortal({ data, save }) {
             const unavailable = full || boat.closed;
             return (
               <button key={boat.id} onClick={() => { if (!unavailable) { setSelBoat(boat); setStep("form"); } }} disabled={unavailable}
-                style={{ border: `2px solid ${unavailable ? "#eee" : TEAL}`, borderRadius: 16, padding: 20, cursor: unavailable ? "not-allowed" : "pointer", background: boat.closed ? "#FEF8F6" : full ? "#fafafa" : "#EBF7FA", textAlign: "left", opacity: unavailable ? 0.6 : 1, position: "relative" }}>
-                <div style={{ position: "absolute", top: 14, right: 14, background: boat.closed ? "#FEF0EB" : full ? "#FEF0EB" : "#E8F8F1", color: boat.closed ? CORAL : full ? CORAL : GREEN, fontSize: 11, fontWeight: 700, padding: "4px 12px", borderRadius: 10 }}>
-                  {boat.closed ? "🚫 Off" : full ? "Complet 🚫" : `${r} place(s) libre`}
+                style={{ border: `2px solid ${boat.closed ? "#ddd" : full ? RED : TEAL}`, borderRadius: 16, padding: 20, cursor: unavailable ? "not-allowed" : "pointer", background: boat.closed ? "#F6F6F6" : full ? RED_BG : "#EBF7FA", textAlign: "left", opacity: boat.closed ? 0.6 : 1, position: "relative" }}>
+                <div style={{ position: "absolute", top: 14, right: 14, background: boat.closed ? "#e0e0e0" : full ? RED : "#E8F8F1", color: boat.closed ? "#777" : full ? "#fff" : GREEN, fontSize: 11, fontWeight: 800, padding: "5px 13px", borderRadius: 10, letterSpacing: full ? 0.3 : 0 }}>
+                  {boat.closed ? "🚫 Off" : full ? "COMPLET 💥" : `${r} place(s) libre`}
                 </div>
                 <Row gap={14} style={{ marginBottom: 14 }}>
                   <span style={{ fontSize: 36 }}>{icon}</span>
@@ -660,7 +680,7 @@ function ResellerPortal({ data, save }) {
                 </div>
                 <Row style={{ justifyContent: "space-between", fontSize: 12, color: "#666" }}>
                   <span>{boatPax(boat)} passager(s) réservé(s)</span>
-                  <span style={{ fontWeight: 700, color: bc }}>{r} place(s) restante(s)</span>
+                  <span style={{ fontWeight: 800, color: full ? RED : bc }}>{full ? "0 place restante" : `${r} place(s) restante(s)`}</span>
                 </Row>
               </button>
             );
@@ -752,12 +772,25 @@ function ResellerPortal({ data, save }) {
             </Row>
           </div>
           <h3 style={{ margin: "0 0 18px", color: DARK }}>Votre réservation</h3>
-          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
-            <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={form.adults}
-              onChange={v => setForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
-            <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={form.children}
-              onChange={v => setForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
-          </Grid>
+          {(() => {
+            const libre  = spots(selBoat);                       // places réellement dispo
+            const total  = form.adults + form.children;
+            const maxAd  = Math.max(0, libre - form.children);
+            const maxCh  = Math.max(0, libre - form.adults);
+            return (<>
+              <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
+                <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={form.adults} max={maxAd}
+                  onChange={v => setForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
+                <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={form.children} max={maxCh}
+                  onChange={v => setForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
+              </Grid>
+              <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
+                {total >= libre
+                  ? `💥 Limite atteinte — ${libre} place(s) disponible(s) sur ce bateau`
+                  : `${total} passager(s) sélectionné(s) · ${libre - total} place(s) encore disponible(s)`}
+              </div>
+            </>);
+          })()}
           <div style={{ marginBottom: 14 }}>
             <FSelect label="Référent(e)" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
               <option value="">— Sélectionner —</option>
@@ -797,7 +830,12 @@ function ResellerPortal({ data, save }) {
           <div style={{ marginBottom: 22 }}>
             <PriceBreakdown form={form} />
           </div>
-          <Btn full onClick={submit} disabled={!form.name.trim() || form.adults + form.children === 0} style={{ padding: 15, fontSize: 16 }}>
+          {!phoneOk(form) && (
+            <div style={{ background: "#FEF0EB", border: `1px solid ${CORAL}40`, borderRadius: 8, padding: "9px 13px", marginBottom: 10, fontSize: 12, color: CORAL, fontWeight: 600 }}>
+              📞 Le numéro de téléphone du client est obligatoire{(form.phone || "").trim() ? " (numéro invalide)" : ""}
+            </div>
+          )}
+          <Btn full onClick={submit} disabled={!form.name.trim() || form.adults + form.children === 0 || !phoneOk(form)} style={{ padding: 15, fontSize: 16 }}>
             Valider la réservation ✓
           </Btn>
         </div>
@@ -937,6 +975,16 @@ function ResellerPortal({ data, save }) {
     const icon = boat?.name === "Aloes Vera" ? "🛥️" : "🚤";
     const bname = boat?.name === "Aloes Vera" ? "Aloès Vera" : boat?.name || "Bateau";
     const saveEdit = () => {
+      // ── Double sécurité : capacité max 12 passagers ──
+      const autres = (boat?.bookings || []).filter(bk => bk.id !== editingPending.id)
+                       .reduce((s, bk) => s + bk.adults + bk.children, 0);
+      const tot    = editForm.adults + editForm.children;
+      if (autres + tot > MAX_CAP) {
+        alert(`💥 Capacité dépassée !\n\nCe bateau ne dispose que de ${Math.max(0, MAX_CAP - autres)} place(s).`);
+        return;
+      }
+      if (!phoneOk(editForm)) { alert("📞 Le numéro de téléphone du client est obligatoire et doit être valide."); return; }
+
       const updated = { ...editingPending, ...editForm, price: editForm.adults * P_AD + editForm.children * P_CH };
       save({ ...data, dates: data.dates.map(d => d.id !== editingPending.dateId ? d : {
         ...d, boats: d.boats.map(b => b.id !== editingPending.boatId ? b : {
@@ -958,12 +1006,28 @@ function ResellerPortal({ data, save }) {
             </Row>
           </div>
           <h3 style={{ margin: "0 0 18px", color: DARK }}>✏️ Modifier la réservation</h3>
-          <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
-            <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editForm.adults}
-              onChange={v => setEditForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
-            <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editForm.children}
-              onChange={v => setEditForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
-          </Grid>
+          {(() => {
+            // Places dispo = capacité − autres réservations (hors celle qu'on modifie)
+            const autres = (boat?.bookings || []).filter(bk => bk.id !== editingPending.id)
+                             .reduce((s, bk) => s + bk.adults + bk.children, 0);
+            const libre  = Math.max(0, MAX_CAP - autres);
+            const total  = editForm.adults + editForm.children;
+            const maxAd  = Math.max(0, libre - editForm.children);
+            const maxCh  = Math.max(0, libre - editForm.adults);
+            return (<>
+              <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
+                <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editForm.adults} max={maxAd}
+                  onChange={v => setEditForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
+                <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editForm.children} max={maxCh}
+                  onChange={v => setEditForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
+              </Grid>
+              <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
+                {total >= libre
+                  ? `💥 Limite atteinte — ${libre} place(s) disponible(s) sur ce bateau`
+                  : `${total} passager(s) · ${libre - total} place(s) encore disponible(s)`}
+              </div>
+            </>);
+          })()}
           <div style={{ marginBottom: 14 }}>
             <FSelect label="Référent(e)" value={editForm.source} onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}>
               <option value="">— Sélectionner —</option>
@@ -994,7 +1058,12 @@ function ResellerPortal({ data, save }) {
             <input type="number" min="0" value={editForm.acompte_amount||0} onChange={e => setEditForm(f=>({...f,acompte_amount:Math.max(0,+e.target.value)}))} style={inputStyle} placeholder="0" />
           </div>
           <div style={{ marginBottom: 22 }}><PriceBreakdown form={editForm} /></div>
-          <Btn full onClick={saveEdit} disabled={!editForm.name.trim() || editForm.adults + editForm.children === 0} style={{ padding: 15, fontSize: 16 }}>
+          {!phoneOk(editForm) && (
+            <div style={{ background: "#FEF0EB", border: `1px solid ${CORAL}40`, borderRadius: 8, padding: "9px 13px", marginBottom: 10, fontSize: 12, color: CORAL, fontWeight: 600 }}>
+              📞 Le numéro de téléphone du client est obligatoire{(editForm.phone || "").trim() ? " (numéro invalide)" : ""}
+            </div>
+          )}
+          <Btn full onClick={saveEdit} disabled={!editForm.name.trim() || editForm.adults + editForm.children === 0 || !phoneOk(editForm)} style={{ padding: 15, fontSize: 16 }}>
             Valider la réservation ✓
           </Btn>
         </div>
@@ -1054,7 +1123,7 @@ function ResellerPortal({ data, save }) {
                       <div style={{ fontSize:14, fontWeight:800, color:"#fff", textTransform:"capitalize" }}>{dayLabel}</div>
                     </div>
                     {avail && <span style={{ background:"rgba(255,255,255,0.2)", color:"#fff", fontSize:11, fontWeight:700, padding:"3px 10px", borderRadius:8, flexShrink:0 }}>Réserver →</span>}
-                    {!avail && !isPast && <span style={{ color:CORAL, fontSize:11, fontWeight:700 }}>Complet</span>}
+                    {!avail && !isPast && <span style={{ color:"#fff", background:RED, fontSize:11, fontWeight:800, padding:"2px 9px", borderRadius:7 }}>COMPLET 💥</span>}
                     {isPast && <span style={{ color:"rgba(255,255,255,0.35)", fontSize:11 }}>Passé</span>}
                   </Row>
                   <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
@@ -1066,7 +1135,7 @@ function ResellerPortal({ data, save }) {
                           <Row style={{ marginBottom:4 }}>
                             <span style={{ fontSize:14 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
                             <span style={{ fontSize:13, fontWeight:700, color:"#fff", flex:1, marginLeft:6 }}>{boat.name==="Aloes Vera"?"Aloès Vera":"Panamax"}</span>
-                            <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":boat.closed?"rgba(255,255,255,0.4)":"#FA9F6A" }}>{boat.closed?"🚫 Off":r<=0?"Complet":r>0?`Reste ${r} place${r>1?"s":""}`:""}</span>
+                            <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":boat.closed?"rgba(255,255,255,0.4)":r<=0?"#fff":"#FA9F6A", background:!isPast&&!boat.closed&&r<=0?RED:"transparent", borderRadius:6, padding:!isPast&&!boat.closed&&r<=0?"2px 8px":0 }}>{boat.closed?"🚫 Off":r<=0?"COMPLET 💥":`Reste ${r} place${r>1?"s":""}`}</span>
                           </Row>
                           <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.15)", overflow:"hidden" }}>
                             <div style={{ height:"100%", width:`${p}%`, background:isPast?"rgba(255,255,255,0.2)":bc, borderRadius:2 }}/>
@@ -1100,7 +1169,7 @@ function ResellerPortal({ data, save }) {
 
       {/* Legend */}
       <Row style={{ justifyContent: "center", marginBottom: 14, flexWrap: "wrap", gap: 14 }}>
-        {[{ c: GREEN, l: "Disponible" }, { c: ORANGE, l: "Presque complet" }, { c: CORAL, l: "Complet" }].map(({ c, l }) => (
+        {[{ c: GREEN, l: "Disponible" }, { c: ORANGE, l: "Presque complet" }, { c: RED, l: "Complet 💥" }].map(({ c, l }) => (
           <Row key={l} gap={5} style={{ fontSize: 11, color: "rgba(255,255,255,0.7)" }}>
             <div style={{ width: 9, height: 9, borderRadius: 5, background: c, flexShrink: 0 }} />{l}
           </Row>
@@ -1150,7 +1219,7 @@ function ResellerPortal({ data, save }) {
                     <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 4, padding: "2px 4px", overflow: "hidden", minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2, minWidth: 0 }}>
                         <span style={{ fontSize: 9, lineHeight: 1, flexShrink: 0 }}>{boat.name === "Aloes Vera" ? "🛥️" : "🚤"}</span>
-                        <span style={{ fontSize: 8, fontWeight: 700, color: boat.closed ? "#bbb" : r <= 0 ? CORAL : "#FA9F6A", flexShrink: 0, marginLeft: 1 }}>{boat.closed ? "Off" : r <= 0 ? "✕" : `R${r}`}</span>
+                        <span style={{ fontSize: 8, fontWeight: 800, color: boat.closed ? "#bbb" : r <= 0 ? "#fff" : "#FA9F6A", background: r <= 0 && !boat.closed ? RED : "transparent", borderRadius: 3, padding: r <= 0 && !boat.closed ? "0 3px" : 0, flexShrink: 0, marginLeft: 1 }}>{boat.closed ? "Off" : r <= 0 ? "💥" : `R${r}`}</span>
                       </div>
                       <div style={{ height: 2, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
                         <div style={{ height: "100%", width: `${p}%`, background: bc, borderRadius: 2 }} />
@@ -2139,12 +2208,25 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           </Row>
         </div>
         <h3 style={{ margin: "0 0 20px", color: DARK }}>+ Nouvelle réservation</h3>
-        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
-          <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={adding.form.adults}
-            onChange={v => setAdding(a => ({ ...a, form: { ...a.form, adults: v, price: v*P_AD+a.form.children*P_CH } }))} />
-          <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={adding.form.children}
-            onChange={v => setAdding(a => ({ ...a, form: { ...a.form, children: v, price: a.form.adults*P_AD+v*P_CH } }))} />
-        </Grid>
+        {(() => {
+          const libre = spots(addBoat);
+          const total = adding.form.adults + adding.form.children;
+          const maxAd = Math.max(0, libre - adding.form.children);
+          const maxCh = Math.max(0, libre - adding.form.adults);
+          return (<>
+            <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
+              <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={adding.form.adults} max={maxAd}
+                onChange={v => setAdding(a => ({ ...a, form: { ...a.form, adults: v, price: v*P_AD+a.form.children*P_CH } }))} />
+              <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={adding.form.children} max={maxCh}
+                onChange={v => setAdding(a => ({ ...a, form: { ...a.form, children: v, price: a.form.adults*P_AD+v*P_CH } }))} />
+            </Grid>
+            <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
+              {total >= libre
+                ? `💥 Limite atteinte — ${libre} place(s) disponible(s) sur ce bateau`
+                : `${total} passager(s) · ${libre - total} place(s) encore disponible(s)`}
+            </div>
+          </>);
+        })()}
         <div style={{ marginBottom: 14 }}>
           <FSelect label="Référent(e)" value={adding.form.source} onChange={e => setAdding(a => ({ ...a, form: { ...a.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -2184,8 +2266,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             sendTelegramNotif(`🆕 Nouvelle réservation (Admin)\n📅 ${entry?.label || ""}\n👤 ${adding.form.name}\n👥 ${adding.form.adults} adulte(s)${adding.form.children ? ` + ${adding.form.children} enfant(s)` : ""}\n💰 ${adding.form.price}€\n👥 Via : ${SOURCES[adding.form.source]?.label || adding.form.source || "?"}`);
             saveAdd(); setAdminStep("day"); setAddBoat(null);
           }}
-          disabled={!adding.form.name.trim() || adding.form.adults+adding.form.children === 0}
-          style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!adding.form.name.trim()||adding.form.adults+adding.form.children===0) ? 0.4 : 1 }}>
+          disabled={!adding.form.name.trim() || adding.form.adults+adding.form.children === 0 || !phoneOk(adding.form)}
+          style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!adding.form.name.trim()||adding.form.adults+adding.form.children===0||!phoneOk(adding.form)) ? 0.4 : 1 }}>
           Valider la réservation ✓
         </button>
       </div>
@@ -2212,12 +2294,29 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           </Row>
         </div>
         <h3 style={{ margin: "0 0 20px", color: DARK }}>✏️ Modifier la réservation</h3>
-        <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 18 }}>
-          <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editing.form.adults}
-            onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, adults: v, price: v*P_AD+ed.form.children*P_CH } }))} />
-          <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editing.form.children}
-            onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: ed.form.adults*P_AD+v*P_CH } }))} />
-        </Grid>
+        {(() => {
+          // Places dispo = capacité − autres réservations (hors celle en cours d'édition)
+          const bt     = entry?.boats.find(b => b.id === editing.boatId);
+          const autres = (bt?.bookings || []).filter(bk => bk.id !== editing.bkId)
+                           .reduce((s, bk) => s + bk.adults + bk.children, 0);
+          const libre  = Math.max(0, MAX_CAP - autres);
+          const total  = editing.form.adults + editing.form.children;
+          const maxAd  = Math.max(0, libre - editing.form.children);
+          const maxCh  = Math.max(0, libre - editing.form.adults);
+          return (<>
+            <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
+              <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editing.form.adults} max={maxAd}
+                onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, adults: v, price: v*P_AD+ed.form.children*P_CH } }))} />
+              <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editing.form.children} max={maxCh}
+                onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: ed.form.adults*P_AD+v*P_CH } }))} />
+            </Grid>
+            <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
+              {total >= libre
+                ? `💥 Limite atteinte — ${libre} place(s) disponible(s) sur ce bateau`
+                : `${total} passager(s) · ${libre - total} place(s) encore disponible(s)`}
+            </div>
+          </>);
+        })()}
         <div style={{ marginBottom: 14 }}>
           <FSelect label="Référent(e)" value={editing.form.source} onChange={e => setEditing(ed => ({ ...ed, form: { ...ed.form, source: e.target.value } }))}>
             {Object.entries(SOURCES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
@@ -2252,8 +2351,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         </div>
         <div style={{ marginBottom: 22 }}><PriceBreakdown form={editing.form} /></div>
         <button onClick={() => { saveEdit(); setAdminStep("day"); }}
-          disabled={!editing.form.name.trim() || editing.form.adults+editing.form.children === 0}
-          style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!editing.form.name.trim()||editing.form.adults+editing.form.children===0) ? 0.4 : 1 }}>
+          disabled={!editing.form.name.trim() || editing.form.adults+editing.form.children === 0 || !phoneOk(editing.form)}
+          style={{ width: "100%", background: TEAL, color: "#fff", border: "none", borderRadius: 12, padding: 15, cursor: "pointer", fontWeight: 800, fontSize: 15, opacity: (!editing.form.name.trim()||editing.form.adults+editing.form.children===0||!phoneOk(editing.form)) ? 0.4 : 1 }}>
           Valider la réservation ✓
         </button>
       </div>
@@ -2300,7 +2399,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
             const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
             return (
-              <div key={boat.id} style={{ background: boat.closed ? "#FEF8F6" : "#fff", borderRadius: 12, padding: "14px 16px", border: `1px solid ${boat.closed ? CORAL+"40" : "#deeaf0"}` }}>
+              <div key={boat.id} style={{ background: boat.closed ? "#F6F6F6" : spots(boat) <= 0 ? RED_BG : "#fff", borderRadius: 12, padding: "14px 16px", border: `1px solid ${boat.closed ? "#ccc" : spots(boat) <= 0 ? RED+"50" : "#deeaf0"}` }}>
                 <Row style={{ marginBottom: 8 }}>
                   <span style={{ fontSize: 18 }}>{icon}</span>
                   <span style={{ fontWeight: 700, color: DARK, flex: 1, fontSize: 14 }}>{displayName}</span>
@@ -2654,8 +2753,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                           <span style={{ fontSize: 7, color: isToday ? "rgba(255,255,255,0.7)" : "#888" }}>
                             {boat.name === "Aloes Vera" ? "🛥️" : "🚤"}
                           </span>
-                          <span style={{ fontSize: 8, fontWeight: 700, color: r <= 0 ? CORAL : "#FA9F6A" }}>
-                            {r <= 0 ? "Complet 🚫" : `R${r}`}
+                          <span style={{ fontSize: 8, fontWeight: 800, color: boat.closed ? "#bbb" : r <= 0 ? "#fff" : "#FA9F6A", background: r <= 0 && !boat.closed ? RED : "transparent", borderRadius: 3, padding: r <= 0 && !boat.closed ? "0 3px" : 0 }}>
+                            {boat.closed ? "Off" : r <= 0 ? "💥" : `R${r}`}
                           </span>
                         </div>
                         <div style={{ height: 3, borderRadius: 2, background: isToday ? "rgba(255,255,255,0.2)" : "#ddd", overflow: "hidden" }}>
@@ -2697,10 +2796,24 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
   const toggle = id => setExp(e => ({ ...e, [id]: !e[id] }));
 
   const saveEdit = () => {
+    // ── Double sécurité : capacité max 12 passagers ──
+    const bt     = data.dates.find(d => d.id === editing.dateId)?.boats.find(b => b.id === editing.boatId);
+    const autres = (bt?.bookings || []).filter(bk => bk.id !== editing.bkId).reduce((s, bk) => s + bk.adults + bk.children, 0);
+    const tot    = editing.form.adults + editing.form.children;
+    if (autres + tot > MAX_CAP) { notify(`💥 Capacité dépassée — ${Math.max(0, MAX_CAP - autres)} place(s) disponible(s)`); return; }
+    if (!phoneOk(editing.form)) { notify("📞 Téléphone obligatoire et valide"); return; }
+
     const next = { ...data, dates: data.dates.map(d => d.id !== editing.dateId ? d : { ...d, boats: d.boats.map(b => b.id !== editing.boatId ? b : { ...b, bookings: b.bookings.map(bk => bk.id !== editing.bkId ? bk : { ...editing.form, id: bk.id }) }) }) };
     save(next); setEditing(null); notify("Modifiée ✓");
   };
   const saveAdd = () => {
+    // ── Double sécurité : capacité max 12 passagers ──
+    const bt    = data.dates.find(d => d.id === adding.dateId)?.boats.find(b => b.id === adding.boatId);
+    const dispo = bt ? spots(bt) : MAX_CAP;
+    const tot   = adding.form.adults + adding.form.children;
+    if (tot > dispo) { notify(`💥 Capacité dépassée — ${dispo} place(s) restante(s)`); return; }
+    if (!phoneOk(adding.form)) { notify("📞 Téléphone obligatoire et valide"); return; }
+
     const next = { ...data, dates: data.dates.map(d => d.id !== adding.dateId ? d : { ...d, boats: d.boats.map(b => b.id !== adding.boatId ? b : { ...b, bookings: [...b.bookings, { ...adding.form, id: uid(), status: "confirmed", ts: Date.now() }] }) }) };
     save(next); setAdding(null); notify("Ajoutée ✓");
   };
@@ -3790,7 +3903,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 // ════════════════════════════════════════════════════════════════
 // PIN GATE
 // ════════════════════════════════════════════════════════════════
-function PinGate({ onUnlock }) {
+function PinGate({ onUnlock, onCancel }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState(false);
   const check = () => { if (pin === PIN) { onUnlock(); } else { setErr(true); setPin(""); setTimeout(() => setErr(false), 1500); } };
@@ -3804,7 +3917,8 @@ function PinGate({ onUnlock }) {
           placeholder="Code PIN"
           style={{ width: "100%", padding: "12px 14px", border: `2px solid ${err ? CORAL : "#ddd"}`, borderRadius: 10, fontSize: 18, textAlign: "center", boxSizing: "border-box", letterSpacing: 8, marginBottom: 12 }} />
         {err && <p style={{ color: CORAL, fontSize: 13, margin: "0 0 10px" }}>Code incorrect</p>}
-        <Btn full onClick={check} style={{ padding: 12, fontSize: 15 }}>Accéder →</Btn>
+        <Btn full onClick={check} style={{ padding: 12, fontSize: 15, marginBottom: 10 }}>Accéder →</Btn>
+        <button onClick={onCancel} style={{ background: "none", border: "none", color: "#aaa", cursor: "pointer", fontSize: 13 }}>← Retour au portail</button>
       </div>
     </div>
   );
@@ -3898,7 +4012,7 @@ export default function Root() {
           <ResellerPortal data={data} save={save} />
         </div>
       )}
-      {mode === "admin-gate" && <PinGate onUnlock={() => setMode("admin")} />}
+      {mode === "admin-gate" && <PinGate onUnlock={() => setMode("admin")} onCancel={() => setMode("reseller")} />}
       {mode === "admin"      && <AdminView data={data} save={save} sources={sources} saveSources={saveSources} skData={skData} saveSkData={saveSkData} reload={reload} />}
 
       {/* Skipper gate */}
