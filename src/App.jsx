@@ -2896,7 +2896,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
         {tab === "revendeurs" && <RevendeursTab sources={sources} saveSources={saveSources} />}
 
         {/* ── Utilisateurs ── */}
-        {tab === "users" && <UsersTab sources={sources} session={session} skData={skData} saveSkData={saveSkData} />}
+        {tab === "users" && <UsersTab sources={sources} saveSources={saveSources} session={session} skData={skData} saveSkData={saveSkData} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
@@ -3887,7 +3887,7 @@ const ROLES = [
   { id:"skipper",    label:"Skipper",        icon:"⚓", color:"#2471A3", desc:"Planning et encaissement des soldes" },
 ];
 
-function UsersTab({ sources, session, skData, saveSkData }) {
+function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
   const [users,   setUsers]   = useState({});
   const [loading, setLoading] = useState(true);
   const [notif,   setNotif]   = useState(null);
@@ -3921,6 +3921,21 @@ function UsersTab({ sources, session, skData, saveSkData }) {
 
   const SK_PALETTE = ["#2471A3","#8E44AD","#C0392B","#1E8449","#E67E22","#16A085","#1A5F7A","#7F8C8D"];
 
+  // Référents déjà rattachés à un compte
+  const usedRefKeys = new Set(
+    Object.values(users).filter(u => u.role === "commercial" && u.refKey).map(u => u.refKey)
+  );
+
+  // Génère une clé unique à partir d'un nom (ex. « Marie Dupont » → « marie »)
+  const makeRefKey = (name) => {
+    const base = name.trim().toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]/g, "").slice(0, 10) || "ref";
+    let key = base, n = 2;
+    while (sources[key]) { key = `${base}${n++}`; }
+    return key;
+  };
+
   const create = async () => {
     if (!form.email.trim() || !form.password) { toast("Email et mot de passe requis", false); return; }
     if (form.password.length < 6)             { toast("Mot de passe : 6 caractères minimum", false); return; }
@@ -3929,10 +3944,25 @@ function UsersTab({ sources, session, skData, saveSkData }) {
     if (form.role === "skipper" && form.skipperId === "__new" && !form.name.trim()) {
       toast("Renseignez le nom du nouveau skipper", false); return;
     }
+    if (form.role === "commercial" && form.refKey === "__new" && !form.name.trim()) {
+      toast("Renseignez le nom du nouveau référent", false); return;
+    }
 
     setBusy(true);
     const mail = form.email.trim().toLowerCase();
-    const d = await call({ action:"create", ...form });
+
+    // Créer le référent au préalable pour l'associer au compte
+    let payload = { ...form };
+    if (form.role === "commercial" && form.refKey === "__new") {
+      const key   = makeRefKey(form.name);
+      const used  = Object.values(sources).map(s => s.color);
+      const color = SK_PALETTE.find(col => !used.includes(col)) || SK_PALETTE[Object.keys(sources).length % SK_PALETTE.length];
+      try { await saveSources({ ...sources, [key]: { label: form.name.trim(), color } }); }
+      catch { setBusy(false); toast("Création du référent impossible", false); return; }
+      payload.refKey = key;
+    }
+
+    const d = await call({ action:"create", ...payload });
 
     // Rattacher le compte au profil skipper
     if (d.success && form.role === "skipper") {
@@ -3954,7 +3984,9 @@ function UsersTab({ sources, session, skData, saveSkData }) {
 
     setBusy(false);
     if (d.success) {
-      toast(form.role === "skipper" ? "Compte créé et rattaché ✓" : "Compte créé ✓");
+      toast(form.role === "commercial" || form.role === "skipper"
+        ? "Compte créé et rattaché ✓"
+        : "Compte créé ✓");
       setAdding(false);
       setForm({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"" });
       refresh();
@@ -4023,10 +4055,17 @@ function UsersTab({ sources, session, skData, saveSkData }) {
             <div style={{ marginBottom:14 }}>
               <FSelect label="Référent associé" value={form.refKey} onChange={e=>setForm(f=>({...f, refKey:e.target.value}))}>
                 <option value="">— Sélectionner —</option>
-                {Object.entries(sources).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                {Object.entries(sources).map(([k,v]) => (
+                  <option key={k} value={k}>
+                    {v.label}{usedRefKeys.has(k) ? " — déjà lié à un compte" : ""}
+                  </option>
+                ))}
+                <option value="__new">+ Créer un nouveau référent</option>
               </FSelect>
               <div style={{ fontSize:11, color:"#888", marginTop:4 }}>
-                Détermine les réservations visibles dans « Mes réservations ».
+                {form.refKey === "__new"
+                  ? "Un nouveau référent sera créé avec le nom saisi ci-dessous."
+                  : "Détermine les réservations visibles dans « Mes réservations »."}
               </div>
             </div>
           )}
@@ -4051,7 +4090,11 @@ function UsersTab({ sources, session, skData, saveSkData }) {
           )}
 
           <div style={{ marginBottom:14 }}>
-            <FInput label="Nom" value={form.name} onChange={e=>setForm(f=>({...f, name:e.target.value}))} placeholder="Prénom Nom" />
+            <FInput
+              label={form.refKey === "__new" ? "Nom (servira aussi de nom du référent)"
+                   : form.skipperId === "__new" ? "Nom (servira aussi de nom du skipper)"
+                   : "Nom"}
+              value={form.name} onChange={e=>setForm(f=>({...f, name:e.target.value}))} placeholder="Prénom Nom" />
           </div>
           <div style={{ marginBottom:14 }}>
             <FInput label="Adresse email" type="email" value={form.email} onChange={e=>setForm(f=>({...f, email:e.target.value}))} placeholder="personne@exemple.com" />
