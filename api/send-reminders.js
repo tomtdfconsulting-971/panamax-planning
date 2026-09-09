@@ -1,6 +1,8 @@
 // api/send-reminders.js — Cron J-7 : envoie les rappels de paiement aux clients
 // Déclenché automatiquement chaque jour à 8h00 par Vercel Cron
 
+import { getServiceToken } from './_firebase.js';
+
 const FIREBASE_PROJECT  = process.env.FIREBASE_PROJECT_ID || 'panamax-planning';
 const FIREBASE_API_KEY  = process.env.FIREBASE_WEB_API_KEY;
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
@@ -10,28 +12,9 @@ const EMAILJS_KEY       = process.env.EMAILJS_PUBLIC_KEY;
 const EMAILJS_PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY; // optionnelle (mode strict)
 const STORE_KEY         = 'panamax-v3';
 
-// ── Authentification Firebase (anonyme, comme l'app) ──────────
-// Les règles Firestore exigent un utilisateur authentifié : on obtient
-// un jeton anonyme avant chaque lecture/écriture.
-let _tok = null, _tokExp = 0;
-async function getIdToken() {
-  if (_tok && Date.now() < _tokExp) return _tok;
-  try {
-    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ returnSecureToken: true }),
-    });
-    const d = await r.json();
-    if (!d.idToken) { console.error('Auth Firebase échouée:', d.error?.message); return null; }
-    _tok = d.idToken;
-    _tokExp = Date.now() + 50 * 60 * 1000;   // jeton valable 1h, on garde une marge
-    return _tok;
-  } catch (e) { console.error('Auth Firebase erreur:', e.message); return null; }
-}
 
 async function firebaseGet(key) {
-  const token = await getIdToken();
+  const token = await getServiceToken();
   if (!token) return null;
   const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/panamax/${key}`;
   const res = await fetch(url, { headers: { 'Authorization': `Bearer ${token}` } });
@@ -41,7 +24,7 @@ async function firebaseGet(key) {
 }
 
 async function firebaseSet(key, value) {
-  const token = await getIdToken();
+  const token = await getServiceToken();
   if (!token) return false;
   const url = `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT}/databases/(default)/documents/panamax/${key}`;
   const res = await fetch(url, {
@@ -143,6 +126,8 @@ export default async function handler(req, res) {
   const horizon = parseInt(req.query?.days) || 7;
   // ?dry=1 pour simuler sans envoyer d'email
   const dryRun  = req.query?.dry === '1';
+  // ?reset=1 pour effacer les marqueurs « rappel déjà envoyé » (tests)
+  const reset   = req.query?.reset === '1';
 
   // Diagnostic de configuration
   const config = {
@@ -161,6 +146,17 @@ export default async function handler(req, res) {
     const raw     = await firebaseGet(STORE_KEY);
     if (!raw) return res.status(200).json({ message: 'Aucune donnée' });
     const current = JSON.parse(raw);
+
+    // ── Mode remise à zéro des marqueurs ──────────────────────
+    if (reset) {
+      let n = 0;
+      for (const d of current.dates)
+        for (const b of d.boats)
+          for (const bk of b.bookings)
+            if (bk.reminder_sent) { delete bk.reminder_sent; delete bk.reminder_sent_at; n++; }
+      const saved = await firebaseSet(STORE_KEY, JSON.stringify(current));
+      return res.status(200).json({ success: true, action: 'reset', marqueursEffaces: n, saved });
+    }
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
