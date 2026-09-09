@@ -77,9 +77,10 @@ const uid      = () => Math.random().toString(36).slice(2, 9);
 // ── Générer un lien de paiement Stripe ────────────────────────
 async function generateStripeLink({ amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId }) {
   try {
+    const token = await window.auth.getIdToken();
     const res = await fetch('/api/stripe-checkout', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId }),
     });
     const data = await res.json();
@@ -95,9 +96,10 @@ async function generateStripeLink({ amount, clientName, clientEmail, dateLabel, 
 // ── Send Telegram notification to admin ───────────────────────
 async function sendTelegramNotif(message) {
   try {
+    const token = await window.auth.getIdToken();
     await fetch('/api/telegram', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
       body: JSON.stringify({ message }),
     });
   } catch (err) {
@@ -528,9 +530,11 @@ function ResellerPortal({ data, save, session }) {
   const [editingPending, setEditingPending] = useState(null);
   const [editForm,       setEditForm]      = useState({ ...BLANK });
   const [delPending,     setDelPending]    = useState(null);
-  // Un commercial est identifié par son compte ; l'admin doit encore choisir
+  // Un commercial est identifié par son compte et ne peut pas en changer ;
+  // l'admin, lui, choisit librement le référent qu'il consulte.
+  const isLockedCommercial = session?.role === "commercial";
   const [identity,       setIdentity]      = useState(
-    session?.role === "commercial" ? (session.refKey || null) : null
+    isLockedCommercial ? (session.refKey || null) : null
   );
   const [viewMode,  setViewMode]  = useState("week"); // "month" | "week"
   const [weekStart, setWeekStart] = useState(() => {
@@ -845,7 +849,22 @@ function ResellerPortal({ data, save, session }) {
     );
   }
 
-  // ── Identification gate ───────────────────
+  // ── Commercial sans référent : accès impossible, pas de choix libre ──
+  if (step === "mes-resa" && !identity && isLockedCommercial) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 400, width: "100%", textAlign: "center" }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+        <h2 style={{ margin: "0 0 8px", color: DARK, fontSize: 17 }}>Compte non rattaché</h2>
+        <p style={{ color: "#888", fontSize: 13, marginBottom: 20, lineHeight: 1.6 }}>
+          Votre compte n'est associé à aucun référent. Contactez l'administrateur
+          pour qu'il complète votre profil.
+        </p>
+        <Btn full onClick={() => setStep("cal")}>← Retour au calendrier</Btn>
+      </div>
+    </div>
+  );
+
+  // ── Identification gate (admin uniquement) ───────────────────
   if (step === "mes-resa" && !identity) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
       <div style={{ background: "#fff", borderRadius: 20, padding: 28, maxWidth: 400, width: "100%" }}>
@@ -895,7 +914,7 @@ function ResellerPortal({ data, save, session }) {
 
     return (
       <div style={{ flex: 1, padding: "0 20px 40px", maxWidth: 560, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
-        <button onClick={() => { setIdentity(null); setStep("cal"); }} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", borderRadius: 20, padding: "7px 18px", fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
+        <button onClick={() => { if (!isLockedCommercial) setIdentity(null); setStep("cal"); }} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", borderRadius: 20, padding: "7px 18px", fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
           ← Retour au calendrier
         </button>
 
@@ -911,7 +930,9 @@ function ResellerPortal({ data, save, session }) {
             <h2 style={{ margin: 0, color: DARK, fontSize: 18 }}>📋 Mes réservations</h2>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ background: SOURCES[identity]?.color, color: "#fff", fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 10 }}>{SOURCES[identity]?.label}</span>
-              <button onClick={() => { setIdentity(null); setStep("cal"); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", fontSize: 12 }}>✕</button>
+              {!isLockedCommercial && (
+                <button onClick={() => { setIdentity(null); setStep("cal"); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", fontSize: 12 }}>✕</button>
+              )}
             </div>
           </div>
           {pending.length === 0 ? (
@@ -1994,7 +2015,8 @@ function WooTab({ data, save, notify }) {
     setLoading(true); setError(null); setOrders(null); setPreview(null);
     try {
       // Appel via le proxy Vercel — pas de CORS, clés sécurisées côté serveur
-      const res = await fetch('/api/woo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      const token = await window.auth.getIdToken();
+      const res = await fetch('/api/woo', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify({}) });
       if (!res.ok) {
         const err = await res.json();
         throw new Error(err.error || `Erreur ${res.status}`);
