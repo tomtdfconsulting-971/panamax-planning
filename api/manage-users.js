@@ -2,6 +2,7 @@
 // Toute action exige un jeton d'un utilisateur ayant le rôle « admin ».
 
 import { verifyIdToken, createAuthUser, loadUsers, saveUsers, FB_API_KEY } from './_firebase.js';
+import { adminDeleteUser, adminSetEmail, adminAvailable } from './_admin.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -77,11 +78,29 @@ export default async function handler(req, res) {
         return res.status(200).json({ success: ok });
       }
 
-      // ── Réinitialiser le mot de passe ─────────────────────
-      case 'password': {
+      // ── Modifier l'adresse email d'un compte ──────────────
+      case 'email': {
         if (!uid || !data.users[uid]) return res.status(404).json({ error: 'Compte introuvable.' });
-        if (!password || password.length < 6) return res.status(400).json({ error: 'Mot de passe : 6 caractères minimum.' });
-        // On envoie un email de réinitialisation (pas de changement direct sans droits admin SDK)
+        const mail = String(email || '').trim().toLowerCase();
+        if (!mail.includes('@') || !mail.includes('.')) {
+          return res.status(400).json({ error: 'Adresse email invalide.' });
+        }
+        const dejaPris = Object.entries(data.users)
+          .some(([k, u]) => k !== uid && (u.email || '').toLowerCase() === mail);
+        if (dejaPris) return res.status(400).json({ error: "Cette adresse est déjà utilisée par un autre compte." });
+
+        const r = await adminSetEmail(uid, mail);
+        if (r.error) return res.status(400).json({ error: r.error });
+
+        const ancien = data.users[uid].email;
+        data.users[uid].email = mail;
+        const ok = await saveUsers(data);
+        return res.status(200).json({ success: ok, ancien, nouveau: mail });
+      }
+
+      // ── Envoyer un lien de réinitialisation par email ─────
+      case 'password-email': {
+        if (!uid || !data.users[uid]) return res.status(404).json({ error: 'Compte introuvable.' });
         const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:sendOobCode?key=${FB_API_KEY}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -91,6 +110,30 @@ export default async function handler(req, res) {
         if (d.error) return res.status(400).json({ error: d.error.message });
         return res.status(200).json({ success: true, mode: 'email', email: data.users[uid].email });
       }
+
+      // ── Supprimer définitivement un compte ────────────────
+      case 'delete': {
+        if (!uid || !data.users[uid]) return res.status(404).json({ error: 'Compte introuvable.' });
+        if (uid === caller.uid) return res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte.' });
+
+        // Un administrateur ne peut pas en supprimer un autre.
+        // La suppression d'un admin se fait depuis la console Firebase.
+        if (data.users[uid].role === 'admin') {
+          return res.status(403).json({ error: "Un compte administrateur ne peut pas être supprimé depuis l'application." });
+        }
+
+        const r = await adminDeleteUser(uid);
+        if (r.error) return res.status(400).json({ error: r.error });
+
+        const email = data.users[uid].email;
+        delete data.users[uid];
+        const ok = await saveUsers(data);
+        return res.status(200).json({ success: ok, email, note: r.note });
+      }
+
+      // ── Diagnostic : le SDK Admin est-il configuré ? ──────
+      case 'capabilities':
+        return res.status(200).json({ success: true, admin: adminAvailable() });
 
       // ── Lister ────────────────────────────────────────────
       case 'list':
