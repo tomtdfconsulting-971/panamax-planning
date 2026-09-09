@@ -10,6 +10,9 @@ import {
   signOut as fbSignOut,
   setPersistence,
   browserLocalPersistence,
+  EmailAuthProvider,
+  reauthenticateWithCredential,
+  updatePassword,
 } from 'firebase/auth'
 
 const firebaseConfig = {
@@ -95,6 +98,16 @@ window.auth = {
   getIdToken: async () => auth.currentUser ? auth.currentUser.getIdToken() : null,
   get uid()   { return auth.currentUser?.uid   || null; },
   get email() { return auth.currentUser?.email || null; },
+
+  // Chaque utilisateur reste maître de son mot de passe.
+  // Firebase exige une réauthentification récente pour cette opération.
+  changePassword: async (currentPassword, newPassword) => {
+    const u = auth.currentUser;
+    if (!u) throw Object.assign(new Error('Non connecté'), { code: 'auth/no-user' });
+    const cred = EmailAuthProvider.credential(u.email, currentPassword);
+    await reauthenticateWithCredential(u, cred);
+    await updatePassword(u, newPassword);
+  },
 };
 
 // Messages d'erreur Firebase traduits en français
@@ -106,6 +119,8 @@ window.authErrorMessage = (code) => ({
   'auth/invalid-credential':     "Identifiants incorrects.",
   'auth/too-many-requests':      "Trop de tentatives. Réessayez dans quelques minutes.",
   'auth/network-request-failed': "Connexion internet indisponible.",
+  'auth/weak-password':          "Mot de passe trop court (6 caractères minimum).",
+  'auth/requires-recent-login':  "Reconnectez-vous avant de changer votre mot de passe.",
 }[code] || "Connexion impossible. Réessayez.");
 
 // ── Chargeur : gère l'état d'authentification et le rôle ────────
