@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
-const PIN       = "1234";
 const STORE_KEY          = "panamax-v3";
 const STORE_KEY_SKIPPERS = "panamax-v3-skippers";
 
@@ -253,8 +252,8 @@ function parseWA(text) {
 // ── Shared storage hook ────────────────────────────────────────
 const DEFAULT_SKIPPERS_DATA = {
   skippers: [
-    { id: "ludo",   name: "Ludo",   pin: "0000", color: "#2471A3", active: true },
-    { id: "camille",name: "Camille",pin: "1111", color: "#8E44AD", active: true },
+    { id: "ludo",   name: "Ludo",   email: "", color: "#2471A3", active: true },
+    { id: "camille",name: "Camille",email: "", color: "#8E44AD", active: true },
   ],
   planning: {}, // { "dateLabel": { "aloes": "ludo", "panamax": "camille" } }
 };
@@ -529,7 +528,10 @@ function ResellerPortal({ data, save }) {
   const [editingPending, setEditingPending] = useState(null);
   const [editForm,       setEditForm]      = useState({ ...BLANK });
   const [delPending,     setDelPending]    = useState(null);
-  const [identity,       setIdentity]      = useState(null); // source key of identified reseller
+  // Un commercial est identifié par son compte ; l'admin doit encore choisir
+  const [identity,       setIdentity]      = useState(
+    session?.role === "commercial" ? (session.refKey || null) : null
+  );
   const [viewMode,  setViewMode]  = useState("week"); // "month" | "week"
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date(); d.setHours(0,0,0,0); return d; // Start from today
@@ -2778,7 +2780,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 // ════════════════════════════════════════════════════════════════
 // ADMIN VIEW
 // ════════════════════════════════════════════════════════════════
-function AdminView({ data, save, sources, saveSources, skData, saveSkData, reload }) {
+function AdminView({ data, save, sources, saveSources, skData, saveSkData, reload, session, onLogout }) {
   const [tab,      setTab]      = useState("planning");
   const [exp,      setExp]      = useState({});
   const [editing,  setEditing]  = useState(null);
@@ -2857,7 +2859,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
         <span style={{ fontSize: 15, fontWeight: 700 }}>Panamax · Admin</span>
         <div style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>
           <div style={{ display: "flex", gap: 2, overflowX: "auto", WebkitOverflowScrolling: "touch", flexShrink: 1, minWidth: 0 }}>
-            {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["compta", "🧾 Comptabilité"], ["skippers_mgmt", "⚓ Skippers"], ["revendeurs", "👥 Référents"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
+            {[["planning", "📅 Planning"], ["stats", "📊 Stats"], ["compta", "🧾 Comptabilité"], ["skippers_mgmt", "⚓ Skippers"], ["revendeurs", "👥 Référents"], ["users", "🔐 Utilisateurs"], ["woo", "🛒 Woo"], ["import", "⬆️ Import"]].map(([v, lbl]) => (
               <button key={v} onClick={() => setTab(v)} style={{ background: tab === v ? "rgba(255,255,255,0.15)" : "transparent", color: tab === v ? "#fff" : "rgba(255,255,255,0.55)", border: "none", borderRadius: 20, padding: "5px 12px", cursor: "pointer", fontSize: 12, fontWeight: tab === v ? 700 : 400, whiteSpace: "nowrap" }}>{lbl}</button>
             ))}
             <button onClick={reload} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, padding: "0 8px" }}>↻</button>
@@ -2892,6 +2894,9 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
 
         {/* ── Référents tab ── */}
         {tab === "revendeurs" && <RevendeursTab sources={sources} saveSources={saveSources} />}
+
+        {/* ── Utilisateurs ── */}
+        {tab === "users" && <UsersTab sources={sources} session={session} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
@@ -2941,7 +2946,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
   const [editSk,   setEditSk]   = useState(null);
   const [editForm, setEditForm] = useState({});
   const [addingSk, setAddingSk] = useState(false);
-  const [newSk,    setNewSk]    = useState({ name:"", pin:"", color:"#2471A3" });
+  const [newSk,    setNewSk]    = useState({ name:"", email:"", color:"#2471A3" });
   const [dayModal, setDayModal] = useState(null); // remonté ici pour ne pas perdre le focus
 
   const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
@@ -2967,16 +2972,16 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
 
   const saveSkipper = () => {
     if (!editForm.name?.trim()) return;
-    const updated = skippers.map(s => s.id===editSk.id ? { ...s, name:editForm.name, ...(editForm.pin?{pin:editForm.pin}:{}) } : s);
+    const updated = skippers.map(s => s.id===editSk.id ? { ...s, name:editForm.name, email:editForm.email||s.email||"" } : s);
     saveSkData({ ...skData, skippers: updated });
     setEditSk(null); toast("Skipper modifié ✓");
   };
 
   const addSkipper = () => {
-    if (!newSk.name.trim() || !newSk.pin.trim()) return;
+    if (!newSk.name.trim()) return;
     const id = newSk.name.toLowerCase().replace(/[^a-z0-9]/g,"_")+"_"+uid();
     saveSkData({ ...skData, skippers: [...skippers, { id, ...newSk, active:true }] });
-    setAddingSk(false); setNewSk({ name:"", pin:"", color:"#2471A3" }); toast("Skipper ajouté ✓");
+    setAddingSk(false); setNewSk({ name:"", email:"", color:"#2471A3" }); toast("Skipper ajouté ✓");
   };
 
   const toggleActive = (id) => {
@@ -3056,7 +3061,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
           <div style={{ fontWeight:700, color:TEAL, marginBottom:14 }}>+ Nouveau skipper</div>
           <Grid cols="1fr 1fr" gap={10} style={{ marginBottom:12 }}>
             <FInput label="Nom" value={newSk.name} onChange={e=>setNewSk(f=>({...f,name:e.target.value}))} placeholder="Prénom..." />
-            <FInput label="Code PIN" type="password" value={newSk.pin} onChange={e=>setNewSk(f=>({...f,pin:e.target.value}))} placeholder="4+ chiffres" />
+            <FInput label="Email du compte" type="email" value={newSk.email||""} onChange={e=>setNewSk(f=>({...f,email:e.target.value}))} placeholder="skipper@exemple.com" />
           </Grid>
           <div style={{ marginBottom:12 }}>
             <Label>Couleur</Label>
@@ -3067,7 +3072,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
             </div>
           </div>
           <Row gap={8}>
-            <Btn onClick={addSkipper} disabled={!newSk.name.trim()||!newSk.pin.trim()}>Enregistrer</Btn>
+            <Btn onClick={addSkipper} disabled={!newSk.name.trim()}>Enregistrer</Btn>
             <Btn variant="ghost" onClick={()=>setAddingSk(false)}>Annuler</Btn>
           </Row>
         </div>
@@ -3080,7 +3085,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
               <div style={{ padding:14, background:"#F0F8FB" }}>
                 <Grid cols="1fr 1fr" gap={10} style={{ marginBottom:12 }}>
                   <FInput label="Nom" value={editForm.name||""} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))} />
-                  <FInput label="Nouveau PIN" type="password" value={editForm.pin||""} onChange={e=>setEditForm(f=>({...f,pin:e.target.value}))} placeholder="Laisser vide = inchangé" />
+                  <FInput label="Email du compte" type="email" value={editForm.email||""} onChange={e=>setEditForm(f=>({...f,email:e.target.value}))} placeholder="skipper@exemple.com" />
                 </Grid>
                 <Row gap={8}><Btn small onClick={saveSkipper}>Enregistrer</Btn><Btn small variant="ghost" onClick={()=>setEditSk(null)}>Annuler</Btn></Row>
               </div>
@@ -3092,7 +3097,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
                   <div style={{ fontSize:11, color:sk.active?GREEN:"#bbb" }}>{sk.active?"● Actif":"○ Inactif"}</div>
                 </div>
                 <Row gap={6}>
-                  <button onClick={()=>{ setEditSk(sk); setEditForm({name:sk.name,pin:""}); setAddingSk(false); }} style={{ background:"#EBF7FA", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
+                  <button onClick={()=>{ setEditSk(sk); setEditForm({name:sk.name,email:sk.email||""}); setAddingSk(false); }} style={{ background:"#EBF7FA", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
                   <button onClick={()=>toggleActive(sk.id)} style={{ background:sk.active?"#FEF0EB":"#E8F8F1", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:sk.active?CORAL:GREEN, fontWeight:600 }}>{sk.active?"Désactiver":"Activer"}</button>
                 </Row>
               </Row>
@@ -3173,34 +3178,6 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
       {tab==="accounts" && AccountsView()}
       {tab==="recap"    && RecapView()}
       {notif&&<div style={{ position:"fixed",bottom:22,left:"50%",transform:"translateX(-50%)",background:notif.ok?TEAL:CORAL,color:"#fff",padding:"10px 24px",borderRadius:28,fontSize:14,fontWeight:600,zIndex:9999 }}>{notif.msg}</div>}
-    </div>
-  );
-}
-
-// ════════════════════════════════════════════════════════════════
-// SKIPPER GATE — PIN LOGIN
-// ════════════════════════════════════════════════════════════════
-function SkipperGate({ skData, onLogin, onCancel }) {
-  const [pin, setPin] = useState("");
-  const [err, setErr] = useState(false);
-  const check = () => {
-    const sk = (skData?.skippers || []).find(s => s.pin === pin && s.active);
-    if (sk) { onLogin(sk); }
-    else { setErr(true); setPin(""); setTimeout(() => setErr(false), 1500); }
-  };
-  return (
-    <div style={{ minHeight:"100vh", background:`linear-gradient(160deg,#0D3D52 0%,#1A5F7A 60%,#2E86AB 100%)`, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Segoe UI',system-ui,sans-serif" }}>
-      <div style={{ background:"#fff", borderRadius:20, padding:40, textAlign:"center", maxWidth:320, width:"100%" }}>
-        <div style={{ fontSize:48, marginBottom:8 }}>⚓</div>
-        <h2 style={{ color:TEAL, margin:"0 0 6px" }}>Accès Skipper</h2>
-        <p style={{ color:"#888", fontSize:14, marginBottom:24 }}>Entrez votre code PIN</p>
-        <input type="password" value={pin} onChange={e=>setPin(e.target.value)} onKeyDown={e=>e.key==="Enter"&&check()}
-          placeholder="Code PIN"
-          style={{ width:"100%", padding:"12px 14px", border:`2px solid ${err?CORAL:"#ddd"}`, borderRadius:10, fontSize:18, textAlign:"center", boxSizing:"border-box", letterSpacing:8, marginBottom:12 }} />
-        {err && <p style={{ color:CORAL, fontSize:13, margin:"0 0 10px" }}>Code incorrect</p>}
-        <Btn full onClick={check} style={{ padding:12, fontSize:15, marginBottom:10 }}>Accéder →</Btn>
-        <button onClick={onCancel} style={{ background:"none", border:"none", color:"#aaa", cursor:"pointer", fontSize:13 }}>Retour</button>
-      </div>
     </div>
   );
 }
@@ -3902,24 +3879,342 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 }
 
 // ════════════════════════════════════════════════════════════════
-// PIN GATE
+// ADMIN — GESTION DES UTILISATEURS
 // ════════════════════════════════════════════════════════════════
-function PinGate({ onUnlock, onCancel }) {
-  const [pin, setPin] = useState("");
-  const [err, setErr] = useState(false);
-  const check = () => { if (pin === PIN) { onUnlock(); } else { setErr(true); setPin(""); setTimeout(() => setErr(false), 1500); } };
+const ROLES = [
+  { id:"admin",      label:"Administrateur", icon:"🔐", color:"#0D3D52", desc:"Accès total à l'application" },
+  { id:"commercial", label:"Commercial",     icon:"🛥️", color:"#1A5F7A", desc:"Réservations et suivi de ses acomptes" },
+  { id:"skipper",    label:"Skipper",        icon:"⚓", color:"#2471A3", desc:"Planning et encaissement des soldes" },
+];
+
+function UsersTab({ sources, session }) {
+  const [users,   setUsers]   = useState({});
+  const [loading, setLoading] = useState(true);
+  const [notif,   setNotif]   = useState(null);
+  const [adding,  setAdding]  = useState(false);
+  const [editUid, setEditUid] = useState(null);
+  const [form,    setForm]    = useState({ email:"", password:"", name:"", role:"commercial", refKey:"" });
+  const [editF,   setEditF]   = useState({ name:"", role:"", refKey:"" });
+  const [busy,    setBusy]    = useState(false);
+
+  const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null), 4000); };
+
+  // Appel authentifié à l'API de gestion
+  const call = async (body) => {
+    const token = await window.auth.getIdToken();
+    const r = await fetch("/api/manage-users", {
+      method: "POST",
+      headers: { "Content-Type":"application/json", "Authorization":`Bearer ${token}` },
+      body: JSON.stringify(body),
+    });
+    return r.json();
+  };
+
+  const refresh = async () => {
+    setLoading(true);
+    const d = await call({ action:"list" });
+    if (d.users) setUsers(d.users); else toast(d.error || "Chargement impossible", false);
+    setLoading(false);
+  };
+
+  useEffect(() => { refresh(); }, []);
+
+  const create = async () => {
+    if (!form.email.trim() || !form.password) { toast("Email et mot de passe requis", false); return; }
+    if (form.password.length < 6)             { toast("Mot de passe : 6 caractères minimum", false); return; }
+    if (form.role === "commercial" && !form.refKey) { toast("Choisissez le référent associé", false); return; }
+    setBusy(true);
+    const d = await call({ action:"create", ...form });
+    setBusy(false);
+    if (d.success) {
+      toast("Compte créé ✓");
+      setAdding(false);
+      setForm({ email:"", password:"", name:"", role:"commercial", refKey:"" });
+      refresh();
+    } else toast(d.error || "Création impossible", false);
+  };
+
+  const toggle = async (uid) => {
+    const d = await call({ action:"toggle", uid });
+    if (d.success) { toast(d.active ? "Compte activé ✓" : "Compte désactivé"); refresh(); }
+    else toast(d.error || "Action impossible", false);
+  };
+
+  const saveEdit = async (uid) => {
+    setBusy(true);
+    const d = await call({ action:"update", uid, ...editF });
+    setBusy(false);
+    if (d.success) { toast("Compte modifié ✓"); setEditUid(null); refresh(); }
+    else toast(d.error || "Modification impossible", false);
+  };
+
+  const resetPwd = async (uid, email) => {
+    if (!window.confirm(`Envoyer un email de réinitialisation à ${email} ?`)) return;
+    const d = await call({ action:"password", uid, password:"placeholder" });
+    if (d.success) toast(`Email envoyé à ${email} (pensez aux spams)`);
+    else toast(d.error || "Envoi impossible", false);
+  };
+
+  const entries = Object.entries(users).sort((a,b) => {
+    const order = { admin:0, skipper:1, commercial:2 };
+    return (order[a[1].role] ?? 9) - (order[b[1].role] ?? 9) || (a[1].name||"").localeCompare(b[1].name||"");
+  });
+
   return (
-    <div style={{ minHeight: "100vh", background: DARK, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
-      <div style={{ background: "#fff", borderRadius: 20, padding: 40, textAlign: "center", maxWidth: 320, width: "100%" }}>
-        <div style={{ fontSize: 48, marginBottom: 8 }}>🐟</div>
-        <h2 style={{ color: TEAL, margin: "0 0 6px" }}>Panamax Admin</h2>
-        <p style={{ color: "#888", fontSize: 14, marginBottom: 24 }}>Accès réservé à l'équipe Panamax</p>
-        <input type="password" value={pin} onChange={e => setPin(e.target.value)} onKeyDown={e => e.key === "Enter" && check()}
-          placeholder="Code PIN"
-          style={{ width: "100%", padding: "12px 14px", border: `2px solid ${err ? CORAL : "#ddd"}`, borderRadius: 10, fontSize: 18, textAlign: "center", boxSizing: "border-box", letterSpacing: 8, marginBottom: 12 }} />
-        {err && <p style={{ color: CORAL, fontSize: 13, margin: "0 0 10px" }}>Code incorrect</p>}
-        <Btn full onClick={check} style={{ padding: 12, fontSize: 15, marginBottom: 10 }}>Accéder →</Btn>
-        <button onClick={onCancel} style={{ background: "none", border: "none", color: "#aaa", cursor: "pointer", fontSize: 13 }}>← Retour au portail</button>
+    <div>
+      <Row style={{ marginBottom:16, flexWrap:"wrap", gap:10 }}>
+        <div>
+          <h3 style={{ margin:0, color:TEAL }}>Comptes utilisateurs</h3>
+          <div style={{ fontSize:12, color:"#888", marginTop:3 }}>{entries.length} compte(s)</div>
+        </div>
+        <div style={{ marginLeft:"auto" }}>
+          <Btn onClick={()=>{ setAdding(!adding); setEditUid(null); }}>{adding ? "Annuler" : "+ Nouveau compte"}</Btn>
+        </div>
+      </Row>
+
+      {/* ── Formulaire de création ── */}
+      {adding && (
+        <div style={{ background:"#F0F8FB", borderRadius:12, padding:18, marginBottom:16, border:`1px solid ${TEAL}30` }}>
+          <div style={{ fontWeight:700, color:TEAL, marginBottom:16 }}>+ Créer un compte</div>
+
+          <div style={{ marginBottom:14 }}>
+            <Label>Rôle</Label>
+            <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:8, marginTop:5 }}>
+              {ROLES.map(r => (
+                <button key={r.id} onClick={()=>setForm(f=>({...f, role:r.id, refKey: r.id==="commercial" ? f.refKey : ""}))}
+                  style={{ textAlign:"left", padding:"11px 13px", borderRadius:10, cursor:"pointer",
+                           border:`2px solid ${form.role===r.id ? r.color : "#ddd"}`,
+                           background: form.role===r.id ? `${r.color}12` : "#fff" }}>
+                  <div style={{ fontWeight:700, fontSize:13, color:form.role===r.id?r.color:DARK }}>{r.icon} {r.label}</div>
+                  <div style={{ fontSize:10.5, color:"#888", marginTop:3, lineHeight:1.4 }}>{r.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {form.role === "commercial" && (
+            <div style={{ marginBottom:14 }}>
+              <FSelect label="Référent associé" value={form.refKey} onChange={e=>setForm(f=>({...f, refKey:e.target.value}))}>
+                <option value="">— Sélectionner —</option>
+                {Object.entries(sources).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+              </FSelect>
+              <div style={{ fontSize:11, color:"#888", marginTop:4 }}>
+                Détermine les réservations visibles dans « Mes réservations ».
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginBottom:14 }}>
+            <FInput label="Nom" value={form.name} onChange={e=>setForm(f=>({...f, name:e.target.value}))} placeholder="Prénom Nom" />
+          </div>
+          <div style={{ marginBottom:14 }}>
+            <FInput label="Adresse email" type="email" value={form.email} onChange={e=>setForm(f=>({...f, email:e.target.value}))} placeholder="personne@exemple.com" />
+          </div>
+          <div style={{ marginBottom:16 }}>
+            <FInput label="Mot de passe provisoire" value={form.password} onChange={e=>setForm(f=>({...f, password:e.target.value}))} placeholder="6 caractères minimum" />
+            <div style={{ fontSize:11, color:"#888", marginTop:4 }}>
+              À communiquer de vive voix. La personne pourra le changer via « Mot de passe oublié ».
+            </div>
+          </div>
+
+          <Row gap={8}>
+            <Btn onClick={create} disabled={busy}>{busy ? "Création…" : "Créer le compte"}</Btn>
+            <Btn variant="ghost" onClick={()=>setAdding(false)}>Annuler</Btn>
+          </Row>
+        </div>
+      )}
+
+      {/* ── Liste des comptes ── */}
+      {loading && <div style={{ textAlign:"center", padding:30, color:"#aaa", fontSize:13 }}>Chargement…</div>}
+
+      {!loading && entries.length === 0 && (
+        <div style={{ textAlign:"center", padding:30, color:"#aaa", fontSize:13 }}>Aucun compte enregistré.</div>
+      )}
+
+      {!loading && entries.map(([uid, u]) => {
+        const role   = ROLES.find(r => r.id === u.role) || { label:u.role, icon:"?", color:"#999" };
+        const isMe   = uid === session?.uid;
+        const isEdit = editUid === uid;
+
+        return (
+          <div key={uid} style={{ background:"#fff", borderRadius:12, border:"1px solid #e0eef3", marginBottom:9, overflow:"hidden", opacity: u.active===false ? 0.6 : 1 }}>
+            {isEdit ? (
+              <div style={{ padding:16, background:"#F0F8FB" }}>
+                <div style={{ fontWeight:700, color:TEAL, marginBottom:14, fontSize:13 }}>✏️ {u.email}</div>
+                <div style={{ marginBottom:12 }}>
+                  <FInput label="Nom" value={editF.name} onChange={e=>setEditF(f=>({...f, name:e.target.value}))} />
+                </div>
+                <div style={{ marginBottom:12 }}>
+                  <FSelect label="Rôle" value={editF.role} onChange={e=>setEditF(f=>({...f, role:e.target.value}))}>
+                    {ROLES.map(r => <option key={r.id} value={r.id}>{r.icon} {r.label}</option>)}
+                  </FSelect>
+                </div>
+                {editF.role === "commercial" && (
+                  <div style={{ marginBottom:12 }}>
+                    <FSelect label="Référent associé" value={editF.refKey || ""} onChange={e=>setEditF(f=>({...f, refKey:e.target.value}))}>
+                      <option value="">— Sélectionner —</option>
+                      {Object.entries(sources).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                    </FSelect>
+                  </div>
+                )}
+                <Row gap={8}>
+                  <Btn small onClick={()=>saveEdit(uid)} disabled={busy}>Enregistrer</Btn>
+                  <Btn small variant="ghost" onClick={()=>setEditUid(null)}>Annuler</Btn>
+                </Row>
+              </div>
+            ) : (
+              <div style={{ padding:"13px 15px" }}>
+                <Row style={{ gap:10, marginBottom:8, flexWrap:"wrap" }}>
+                  <div style={{ width:36, height:36, borderRadius:18, background:role.color, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>
+                    {role.icon}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontWeight:700, color:DARK, fontSize:14 }}>
+                      {u.name || u.email}
+                      {isMe && <span style={{ fontSize:10, background:"#E8F8F1", color:GREEN, padding:"2px 7px", borderRadius:6, marginLeft:7, fontWeight:700 }}>vous</span>}
+                    </div>
+                    <div style={{ fontSize:11.5, color:"#888", marginTop:2, wordBreak:"break-all" }}>{u.email}</div>
+                  </div>
+                  <span style={{ background:role.color, color:"#fff", fontSize:10.5, padding:"3px 10px", borderRadius:7, fontWeight:700, flexShrink:0 }}>
+                    {role.label}
+                  </span>
+                </Row>
+
+                {u.role === "commercial" && (
+                  <div style={{ fontSize:11.5, color:"#888", marginBottom:8 }}>
+                    Référent : {u.refKey ? (sources[u.refKey]?.label || u.refKey) : <span style={{ color:CORAL, fontWeight:600 }}>non défini</span>}
+                  </div>
+                )}
+                <div style={{ fontSize:11, color: u.active===false ? CORAL : GREEN, fontWeight:600, marginBottom:9 }}>
+                  {u.active===false ? "○ Désactivé" : "● Actif"}
+                </div>
+
+                <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
+                  <button onClick={()=>{ setEditUid(uid); setEditF({ name:u.name||"", role:u.role, refKey:u.refKey||"" }); setAdding(false); }}
+                    style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11.5, color:TEAL, fontWeight:600 }}>
+                    ✏️ Modifier
+                  </button>
+                  <button onClick={()=>resetPwd(uid, u.email)}
+                    style={{ background:"#FFF8EE", border:"none", borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11.5, color:ORANGE, fontWeight:600 }}>
+                    🔑 Réinitialiser
+                  </button>
+                  {!isMe && (
+                    <button onClick={()=>toggle(uid)}
+                      style={{ background: u.active===false ? "#E8F8F1" : "#FEF0EB", border:"none", borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11.5, color: u.active===false ? GREEN : CORAL, fontWeight:600 }}>
+                      {u.active===false ? "Activer" : "Désactiver"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {notif && (
+        <div style={{ position:"fixed", bottom:22, left:"50%", transform:"translateX(-50%)", background:notif.ok?TEAL:CORAL, color:"#fff", padding:"11px 22px", borderRadius:28, fontSize:13.5, fontWeight:600, zIndex:9999, maxWidth:"90vw", textAlign:"center" }}>
+          {notif.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// ÉCRAN DE CONNEXION
+// ════════════════════════════════════════════════════════════════
+function LoginScreen({ notice }) {
+  const [email, setEmail]   = useState("");
+  const [pwd,   setPwd]     = useState("");
+  const [err,   setErr]     = useState(notice || "");
+  const [busy,  setBusy]    = useState(false);
+  const [reset, setReset]   = useState(false);
+  const [info,  setInfo]    = useState("");
+
+  const submit = async () => {
+    if (!email.trim() || !pwd) { setErr("Renseignez votre email et votre mot de passe."); return; }
+    setBusy(true); setErr(""); setInfo("");
+    try {
+      await window.auth.signIn(email, pwd);
+      // La suite est gérée par onAuthStateChanged dans main.jsx
+    } catch (e) {
+      setErr(window.authErrorMessage(e.code));
+      setBusy(false);
+    }
+  };
+
+  const sendReset = async () => {
+    if (!email.trim()) { setErr("Renseignez d'abord votre adresse email."); return; }
+    setBusy(true); setErr(""); setInfo("");
+    try {
+      const r = await fetch("/api/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      });
+      const d = await r.json();
+      if (d.success) { setInfo("Si ce compte existe, un email de réinitialisation vient d'être envoyé. Pensez à vérifier vos spams."); setReset(false); }
+      else setErr(d.error || "Envoi impossible.");
+    } catch { setErr("Envoi impossible."); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ minHeight:"100vh", width:"100%", boxSizing:"border-box", background:`linear-gradient(160deg, ${DARK} 0%, ${TEAL} 55%, #2E86AB 100%)`, fontFamily:"'Segoe UI', system-ui, sans-serif", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"24px 16px" }}>
+
+      <img src="/1-ICONE-POISSON-PANAMAX-Original.png" alt="Panamax" style={{ width:76, height:76, objectFit:"contain", marginBottom:10 }} />
+      <div style={{ color:"#fff", fontSize:22, fontWeight:800 }}>Panamax Excursions</div>
+      <div style={{ color:"rgba(255,255,255,0.55)", fontSize:12, marginTop:4, marginBottom:24 }}>Gestion des réservations</div>
+
+      <div style={{ background:"#fff", borderRadius:20, padding:"28px 24px", width:"100%", maxWidth:380, boxSizing:"border-box", boxShadow:"0 8px 32px rgba(0,0,0,0.18)" }}>
+        <h2 style={{ margin:"0 0 20px", color:TEAL, fontSize:18, textAlign:"center" }}>
+          {reset ? "Mot de passe oublié" : "Connexion"}
+        </h2>
+
+        <div style={{ marginBottom:14 }}>
+          <Label>Adresse email</Label>
+          <input type="email" value={email} autoComplete="username" autoCapitalize="none"
+            onChange={e=>setEmail(e.target.value)}
+            onKeyDown={e=>e.key==="Enter" && (reset ? sendReset() : submit())}
+            placeholder="vous@exemple.com" style={inputStyle} />
+        </div>
+
+        {!reset && (
+          <div style={{ marginBottom:14 }}>
+            <Label>Mot de passe</Label>
+            <input type="password" value={pwd} autoComplete="current-password"
+              onChange={e=>setPwd(e.target.value)}
+              onKeyDown={e=>e.key==="Enter" && submit()}
+              placeholder="••••••••" style={inputStyle} />
+          </div>
+        )}
+
+        {err && (
+          <div style={{ background:"#FEF0EB", border:`1px solid ${CORAL}40`, borderRadius:8, padding:"9px 13px", marginBottom:12, fontSize:12.5, color:CORAL, fontWeight:600, lineHeight:1.5 }}>
+            {err}
+          </div>
+        )}
+        {info && (
+          <div style={{ background:"#E8F8F1", border:`1px solid ${GREEN}40`, borderRadius:8, padding:"9px 13px", marginBottom:12, fontSize:12.5, color:GREEN, fontWeight:600, lineHeight:1.5 }}>
+            {info}
+          </div>
+        )}
+
+        <Btn full onClick={reset ? sendReset : submit} disabled={busy}
+          style={{ padding:13, fontSize:15, marginBottom:12, opacity: busy ? 0.6 : 1 }}>
+          {busy ? "Patientez…" : reset ? "Envoyer le lien" : "Se connecter"}
+        </Btn>
+
+        <div style={{ textAlign:"center" }}>
+          <button onClick={()=>{ setReset(!reset); setErr(""); setInfo(""); }}
+            style={{ background:"none", border:"none", color:"#999", cursor:"pointer", fontSize:12.5, textDecoration:"underline" }}>
+            {reset ? "← Retour à la connexion" : "Mot de passe oublié ?"}
+          </button>
+        </div>
+      </div>
+
+      <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11, marginTop:20, textAlign:"center" }}>
+        Accès réservé à l'équipe Panamax
       </div>
     </div>
   );
@@ -3989,10 +4284,36 @@ function StripeButton({ bk, dateLabel, dateId, boatId, small }) {
 // ════════════════════════════════════════════════════════════════
 // ROOT
 // ════════════════════════════════════════════════════════════════
-export default function Root() {
+export default function Root({ session, notice }) {
+  // ── Pas de session : écran de connexion ──────────────────────
+  if (!session) return <LoginScreen notice={notice} />;
+  return <AuthenticatedApp session={session} />;
+}
+
+function AuthenticatedApp({ session }) {
   const { data, save, sources, saveSources, skData, saveSkData, loading, reload } = useData();
-  const [mode, setMode] = useState("reseller");
-  const [skipperUser, setSkipperUser] = useState(null); // logged-in skipper
+  const isAdmin = session.role === "admin";
+
+  // Vue initiale selon le rôle
+  const [mode, setMode] = useState(
+    session.role === "skipper" ? "skipper" : session.role === "admin" ? "admin" : "reseller"
+  );
+  // Le skipper connecté est déduit de son compte
+  const [skipperUser, setSkipperUser] = useState(null);
+
+  const logout = async () => {
+    if (window.confirm("Se déconnecter ?")) { try { await window.auth.signOut(); } catch {} }
+  };
+
+  // Rattacher le compte skipper au profil de la liste des skippers
+  useEffect(() => {
+    if (session.role !== "skipper" || !skData?.skippers) return;
+    const match = skData.skippers.find(s =>
+      (s.email && s.email.toLowerCase() === session.email.toLowerCase()) ||
+      (s.name  && s.name.toLowerCase()  === (session.name || "").toLowerCase())
+    );
+    setSkipperUser(match || { id: session.uid, name: session.name, color: "#2471A3", active: true });
+  }, [session, skData]);
 
   if (loading) return (
     <div style={{ minHeight: "100vh", background: DARK, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", fontFamily: "system-ui", gap: 16 }}>
@@ -4008,40 +4329,45 @@ export default function Root() {
           <div style={{ padding: "24px 24px 0", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center" }}>
             <img src="/1-ICONE-POISSON-PANAMAX-Original.png" alt="Panamax" style={{ width: 72, height: 72, objectFit: "contain", marginBottom: 6 }} />
             <div style={{ color: "#fff", fontSize: 21, fontWeight: 800 }}>Panamax Excursions</div>
-            <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginTop: 3 }}>Portail Commercial · Réservations en ligne</div>
+            <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginTop: 3 }}>
+              {session.name} · {session.role === "admin" ? "Administrateur" : "Portail Commercial"}
+            </div>
           </div>
-          <ResellerPortal data={data} save={save} />
+          <ResellerPortal data={data} save={save} session={session} />
         </div>
       )}
-      {mode === "admin-gate" && <PinGate onUnlock={() => setMode("admin")} onCancel={() => setMode("reseller")} />}
-      {mode === "admin"      && <AdminView data={data} save={save} sources={sources} saveSources={saveSources} skData={skData} saveSkData={saveSkData} reload={reload} />}
-
-      {/* Skipper gate */}
-      {mode === "skipper-gate" && (
-        <SkipperGate skData={skData} onLogin={(sk) => { setSkipperUser(sk); setMode("skipper"); }} onCancel={() => setMode("reseller")} />
+      {mode === "admin" && isAdmin && (
+        <AdminView data={data} save={save} sources={sources} saveSources={saveSources}
+                   skData={skData} saveSkData={saveSkData} reload={reload}
+                   session={session} onLogout={logout} />
       )}
-      {/* Skipper view */}
+
       {mode === "skipper" && skipperUser && (
-        <SkipperView data={data} save={save} skData={skData} saveSkData={saveSkData} skipperUser={skipperUser} onLogout={() => { setSkipperUser(null); setMode("reseller"); }} />
+        <SkipperView data={data} save={save} skData={skData} saveSkData={saveSkData}
+                     skipperUser={skipperUser} onLogout={logout} />
       )}
 
-      {/* Nav buttons */}
-      <div style={{ position: "fixed", bottom: 16, right: 14, zIndex: 200, display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
-        {mode === "reseller" && (
-          <button onClick={() => setMode("skipper-gate")}
-            style={{ background: "rgba(0,0,0,0.25)", border: "none", cursor: "pointer", fontSize: 13, opacity: 0.35, padding: "5px 12px", borderRadius: 20, color: "#fff", fontWeight: 600 }}>
-            ⚓
-          </button>
+      {/* ── Barre de navigation selon le rôle ── */}
+      <div style={{ position: "fixed", bottom: 16, right: 14, zIndex: 200, display: "flex", flexDirection: "column", gap: 7, alignItems: "flex-end" }}>
+
+        {/* L'admin circule librement entre les trois vues */}
+        {isAdmin && (
+          <div style={{ display: "flex", gap: 5, background: "rgba(13,61,82,0.9)", padding: 4, borderRadius: 22, boxShadow: "0 2px 10px rgba(0,0,0,0.2)" }}>
+            {[["reseller", "🛥️"], ["skipper", "⚓"], ["admin", "🔐"]].map(([m, icon]) => (
+              <button key={m} onClick={() => setMode(m)}
+                style={{ background: mode === m ? "#fff" : "transparent", border: "none", cursor: "pointer",
+                         fontSize: 14, padding: "6px 11px", borderRadius: 18, lineHeight: 1 }}>
+                {icon}
+              </button>
+            ))}
+          </div>
         )}
-        {mode === "skipper" && (
-          <button onClick={() => { setSkipperUser(null); setMode("reseller"); }}
-            style={{ background: "rgba(13,61,82,0.85)", border: "none", cursor: "pointer", fontSize: 12, padding: "6px 14px", borderRadius: 20, color: "#fff", fontWeight: 700 }}>
-            ← Portail
-          </button>
-        )}
-        <button onClick={() => mode === "admin" ? setMode("reseller") : setMode("admin-gate")}
-          style={{ background: mode === "admin" ? "rgba(13,61,82,0.85)" : "none", border: "none", cursor: "pointer", fontSize: mode === "admin" ? 13 : 16, opacity: mode === "admin" ? 0.9 : 0.2, padding: mode === "admin" ? "6px 12px" : 4, lineHeight: 1, borderRadius: 20, color: "#fff", fontWeight: 600 }}>
-          {mode === "admin" ? "← Portail" : "🐟"}
+
+        {/* Déconnexion — accessible à tous */}
+        <button onClick={logout}
+          style={{ background: "rgba(0,0,0,0.35)", border: "none", cursor: "pointer", fontSize: 11.5,
+                   padding: "6px 13px", borderRadius: 20, color: "#fff", fontWeight: 600 }}>
+          ⏻ Déconnexion
         </button>
       </div>
     </div>
