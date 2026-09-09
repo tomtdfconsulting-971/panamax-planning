@@ -1,5 +1,7 @@
 // api/stripe-checkout.js — Génère un lien de paiement Stripe pour le solde d'une réservation
 
+import { verifyIdToken } from './_firebase.js';
+
 const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
 const APP_URL           = 'https://panamax-planning.vercel.app';
 
@@ -10,6 +12,11 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
+
+
+  // Réservé aux utilisateurs authentifiés de l'application
+  const _auth = await verifyIdToken((req.headers.authorization || '').replace('Bearer ', ''));
+  if (!_auth) return res.status(401).json({ error: 'Authentification requise' });
 
   const { amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId } = req.body;
 
