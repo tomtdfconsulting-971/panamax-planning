@@ -2,7 +2,7 @@
 // Toute action exige un jeton d'un utilisateur ayant le rôle « admin ».
 
 import { verifyIdToken, createAuthUser, loadUsers, saveUsers, FB_API_KEY } from './_firebase.js';
-import { adminDeleteUser, adminSetEmail, adminAvailable } from './_admin.js';
+import { adminDeleteUser, adminSetEmail, adminAvailable, adminDiagnostic } from './_admin.js';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -133,7 +133,7 @@ export default async function handler(req, res) {
 
       // ── Diagnostic : le SDK Admin est-il configuré ? ──────
       case 'capabilities':
-        return res.status(200).json({ success: true, admin: adminAvailable() });
+        return res.status(200).json({ success: true, admin: adminAvailable(), diagnostic: adminDiagnostic() });
 
       // ── Lister ────────────────────────────────────────────
       case 'list':
