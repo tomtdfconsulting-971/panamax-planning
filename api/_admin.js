@@ -24,7 +24,15 @@ function ensureApp() {
 
   const projectId   = process.env.FIREBASE_PROJECT_ID || 'panamax-planning';
   const clientEmail = (process.env.FIREBASE_ADMIN_CLIENT_EMAIL || '').trim();
-  const rawKey      = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+
+  // Deux formats acceptés. Le base64 est recommandé : il évite tout
+  // problème de retours à la ligne au copier-coller dans Vercel.
+  let rawKey = process.env.FIREBASE_ADMIN_PRIVATE_KEY;
+  const b64  = (process.env.FIREBASE_ADMIN_PRIVATE_KEY_B64 || '').trim();
+  if (b64) {
+    try { rawKey = Buffer.from(b64, 'base64').toString('utf8'); }
+    catch { _reason = "FIREBASE_ADMIN_PRIVATE_KEY_B64 n'est pas un base64 valide."; _ready = false; return false; }
+  }
 
   if (!clientEmail && !rawKey) {
     _reason = "Les deux variables FIREBASE_ADMIN_CLIENT_EMAIL et FIREBASE_ADMIN_PRIVATE_KEY sont absentes sur Vercel (avez-vous redéployé ?).";
@@ -63,6 +71,15 @@ function ensureApp() {
   }
 }
 
+// Traduit les erreurs techniques de signature en message actionnable
+function messageClaire(msg) {
+  if (/asymmetric key|secretOrPrivateKey|DECODER|PEM/i.test(msg)) {
+    return "La clé privée est illisible (retours à la ligne probablement altérés). "
+         + "Réencodez-la en base64 dans la variable FIREBASE_ADMIN_PRIVATE_KEY_B64.";
+  }
+  return msg;
+}
+
 const indispo = () => ({ error: `SDK Admin indisponible. ${_reason}` });
 
 // Supprime définitivement un compte Firebase Auth
@@ -73,7 +90,7 @@ export async function adminDeleteUser(uid) {
     return { success: true };
   } catch (e) {
     if (e.code === 'auth/user-not-found') return { success: true, note: 'compte déjà absent' };
-    return { error: e.message };
+    return { error: messageClaire(e.message) };
   }
 }
 
@@ -90,7 +107,7 @@ export async function adminSetEmail(uid, email) {
       'auth/email-already-exists': "Cette adresse est déjà utilisée par un autre compte.",
       'auth/invalid-email':        "Adresse email invalide.",
     };
-    return { error: map[e.code] || e.message };
+    return { error: map[e.code] || messageClaire(e.message) };
   }
 }
 
@@ -104,6 +121,7 @@ export function adminDiagnostic() {
     clientEmailPresent: !!(process.env.FIREBASE_ADMIN_CLIENT_EMAIL || '').trim(),
     clientEmailApercu: (process.env.FIREBASE_ADMIN_CLIENT_EMAIL || '').trim().slice(0, 22) + '…',
     cleLongueur: raw.length,
+    formatBase64: !!(process.env.FIREBASE_ADMIN_PRIVATE_KEY_B64 || '').trim(),
     cleCommenceParBegin: normaliseKey(raw).includes('BEGIN PRIVATE KEY'),
     projectId: process.env.FIREBASE_PROJECT_ID || 'panamax-planning',
   };
