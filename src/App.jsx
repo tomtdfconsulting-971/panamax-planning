@@ -3918,6 +3918,8 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
   const [form,    setForm]    = useState({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"" });
   const [editF,   setEditF]   = useState({ name:"", role:"", refKey:"" });
   const [busy,    setBusy]    = useState(false);
+  const [mailUid, setMailUid] = useState(null);   // compte dont on change l'email
+  const [newMail, setNewMail] = useState("");
 
   const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null), 4000); };
 
@@ -4029,11 +4031,54 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
     else toast(d.error || "Modification impossible", false);
   };
 
-  const resetPwd = async (uid, email) => {
-    if (!window.confirm(`Envoyer un email de réinitialisation à ${email} ?`)) return;
-    const d = await call({ action:"password", uid, password:"placeholder" });
-    if (d.success) toast(`Email envoyé à ${email} (pensez aux spams)`);
+  // Modifier l'adresse email d'un compte
+  const changeEmail = async (uid, u) => {
+    const mail = newMail.trim().toLowerCase();
+    if (!mail.includes("@") || !mail.includes(".")) { toast("Adresse email invalide", false); return; }
+    setBusy(true);
+    const d = await call({ action:"email", uid, email:mail });
+
+    // Reporter le changement sur le profil skipper rattaché
+    if (d.success && u.role === "skipper" && skData?.skippers) {
+      const i = skData.skippers.findIndex(s => (s.email || "").toLowerCase() === (u.email || "").toLowerCase());
+      if (i >= 0) {
+        const skippers = [...skData.skippers];
+        skippers[i] = { ...skippers[i], email: mail };
+        try { await saveSkData({ ...skData, skippers }); } catch {}
+      }
+    }
+
+    setBusy(false);
+    if (d.success) { toast("Adresse email modifiée ✓"); setMailUid(null); setNewMail(""); refresh(); }
+    else toast(d.error || "Modification impossible", false);
+  };
+
+  // Aide : envoi d'un lien de réinitialisation (l'admin ne voit jamais le mot de passe)
+  const sendResetMail = async (uid, email) => {
+    const d = await call({ action:"password-email", uid });
+    if (d.success) toast(`Lien envoyé à ${email} — pensez aux spams`);
     else toast(d.error || "Envoi impossible", false);
+  };
+
+  // Suppression définitive
+  const removeUser = async (uid, u) => {
+    if (!window.confirm(`Supprimer définitivement le compte de ${u.name || u.email} ?\n\nCette action est irréversible.`)) return;
+    setBusy(true);
+    const d = await call({ action:"delete", uid });
+
+    // Détacher le profil skipper correspondant
+    if (d.success && u.role === "skipper" && skData?.skippers) {
+      const i = skData.skippers.findIndex(s => (s.email || "").toLowerCase() === (u.email || "").toLowerCase());
+      if (i >= 0) {
+        const skippers = [...skData.skippers];
+        skippers[i] = { ...skippers[i], email: "" };
+        try { await saveSkData({ ...skData, skippers }); } catch {}
+      }
+    }
+
+    setBusy(false);
+    if (d.success) { toast("Compte supprimé ✓"); refresh(); }
+    else toast(d.error || "Suppression impossible", false);
   };
 
   const entries = Object.entries(users).sort((a,b) => {
@@ -4211,13 +4256,13 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                 </div>
 
                 <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
-                  <button onClick={()=>{ setEditUid(uid); setEditF({ name:u.name||"", role:u.role, refKey:u.refKey||"" }); setAdding(false); }}
+                  <button onClick={()=>{ setEditUid(uid); setEditF({ name:u.name||"", role:u.role, refKey:u.refKey||"" }); setAdding(false); setPwdUid(null); }}
                     style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11.5, color:TEAL, fontWeight:600 }}>
                     ✏️ Modifier
                   </button>
-                  <button onClick={()=>resetPwd(uid, u.email)}
+                  <button onClick={()=>{ setMailUid(mailUid===uid ? null : uid); setNewMail(u.email||""); setEditUid(null); }}
                     style={{ background:"#FFF8EE", border:"none", borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11.5, color:ORANGE, fontWeight:600 }}>
-                    🔑 Réinitialiser
+                    ✉️ Email
                   </button>
                   {!isMe && (
                     <button onClick={()=>toggle(uid)}
@@ -4225,7 +4270,41 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                       {u.active===false ? "Activer" : "Désactiver"}
                     </button>
                   )}
+                  {!isMe && u.role !== "admin" && (
+                    <button onClick={()=>removeUser(uid, u)} disabled={busy}
+                      style={{ background:"#FEF0EB", border:`1px solid ${CORAL}40`, borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11.5, color:CORAL, fontWeight:600 }}>
+                      🗑 Supprimer
+                    </button>
+                  )}
                 </div>
+
+                {/* ── Changement d'adresse email ── */}
+                {mailUid === uid && (
+                  <div style={{ background:"#FFF8EE", borderRadius:9, padding:14, marginTop:10, border:`1px solid ${ORANGE}35` }}>
+                    <div style={{ fontWeight:700, color:ORANGE, fontSize:12.5, marginBottom:10 }}>
+                      Nouvelle adresse email
+                    </div>
+                    <div style={{ marginBottom:10 }}>
+                      <input type="email" value={newMail} onChange={e=>setNewMail(e.target.value)}
+                        onKeyDown={e=>e.key==="Enter" && changeEmail(uid, u)}
+                        placeholder="personne@exemple.com" style={inputStyle} />
+                      <div style={{ fontSize:11, color:"#888", marginTop:4, lineHeight:1.5 }}>
+                        La personne devra utiliser cette adresse pour se connecter.
+                        Son mot de passe reste inchangé.
+                      </div>
+                    </div>
+                    <Row gap={8} style={{ flexWrap:"wrap" }}>
+                      <Btn small onClick={()=>changeEmail(uid, u)} disabled={busy || !newMail.trim() || newMail.trim().toLowerCase() === (u.email||"").toLowerCase()}>
+                        {busy ? "…" : "Enregistrer"}
+                      </Btn>
+                      <Btn small variant="ghost" onClick={()=>{ setMailUid(null); setNewMail(""); }}>Annuler</Btn>
+                      <button onClick={()=>sendResetMail(uid, u.email)}
+                        style={{ background:"none", border:"none", color:"#999", cursor:"pointer", fontSize:11.5, textDecoration:"underline" }}>
+                        envoyer un lien de réinitialisation de mot de passe
+                      </button>
+                    </Row>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -4237,6 +4316,102 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
           {notif.msg}
         </div>
       )}
+    </div>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// MON COMPTE — accessible à tous les rôles
+// ════════════════════════════════════════════════════════════════
+function MonCompte({ session, onClose }) {
+  const [cur,  setCur]  = useState("");
+  const [pwd1, setPwd1] = useState("");
+  const [pwd2, setPwd2] = useState("");
+  const [err,  setErr]  = useState("");
+  const [ok,   setOk]   = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const roleLabel = { admin:"Administrateur", commercial:"Commercial", skipper:"Skipper" }[session.role] || session.role;
+
+  const submit = async () => {
+    setErr(""); setOk("");
+    if (!cur)                { setErr("Saisissez votre mot de passe actuel."); return; }
+    if (pwd1.length < 6)     { setErr("Le nouveau mot de passe doit faire 6 caractères minimum."); return; }
+    if (pwd1 !== pwd2)       { setErr("Les deux nouveaux mots de passe ne correspondent pas."); return; }
+    if (pwd1 === cur)        { setErr("Le nouveau mot de passe est identique à l'actuel."); return; }
+    setBusy(true);
+    try {
+      await window.auth.changePassword(cur, pwd1);
+      setOk("Mot de passe modifié ✓");
+      setCur(""); setPwd1(""); setPwd2("");
+    } catch (e) {
+      setErr(window.authErrorMessage(e.code));
+    }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:400,
+                  display:"flex", alignItems:"center", justifyContent:"center", padding:16,
+                  fontFamily:"'Segoe UI', system-ui, sans-serif" }}>
+      <div style={{ background:"#fff", borderRadius:18, padding:26, maxWidth:380, width:"100%",
+                    boxSizing:"border-box", maxHeight:"90vh", overflowY:"auto" }}>
+
+        <Row style={{ marginBottom:18 }}>
+          <h2 style={{ margin:0, color:TEAL, fontSize:17 }}>Mon compte</h2>
+          <button onClick={onClose} style={{ marginLeft:"auto", background:"none", border:"none",
+                    cursor:"pointer", fontSize:22, color:"#bbb", lineHeight:1 }}>✕</button>
+        </Row>
+
+        {/* Identité */}
+        <div style={{ background:"#F0F8FB", borderRadius:10, padding:"13px 15px", marginBottom:20,
+                      border:`1px solid ${TEAL}20`, display:"flex", flexDirection:"column", gap:6 }}>
+          <div style={{ fontSize:13, color:DARK, fontWeight:700 }}>{session.name}</div>
+          <div style={{ fontSize:12, color:"#888", wordBreak:"break-all" }}>{session.email}</div>
+          <div><span style={{ background:TEAL, color:"#fff", fontSize:10.5, padding:"2px 9px",
+                              borderRadius:6, fontWeight:700 }}>{roleLabel}</span></div>
+          <div style={{ fontSize:11, color:"#aaa", marginTop:2, lineHeight:1.5 }}>
+            Pour changer votre adresse email, contactez un administrateur.
+          </div>
+        </div>
+
+        {/* Mot de passe */}
+        <div style={{ fontWeight:700, color:DARK, fontSize:13.5, marginBottom:12 }}>
+          Changer mon mot de passe
+        </div>
+
+        <div style={{ marginBottom:12 }}>
+          <Label>Mot de passe actuel</Label>
+          <input type="password" value={cur} autoComplete="current-password"
+            onChange={e=>setCur(e.target.value)} style={inputStyle} placeholder="••••••••" />
+        </div>
+        <div style={{ marginBottom:12 }}>
+          <Label>Nouveau mot de passe</Label>
+          <input type="password" value={pwd1} autoComplete="new-password"
+            onChange={e=>setPwd1(e.target.value)} style={inputStyle} placeholder="6 caractères minimum" />
+        </div>
+        <div style={{ marginBottom:14 }}>
+          <Label>Confirmer le nouveau mot de passe</Label>
+          <input type="password" value={pwd2} autoComplete="new-password"
+            onChange={e=>setPwd2(e.target.value)} onKeyDown={e=>e.key==="Enter" && submit()}
+            style={inputStyle} placeholder="••••••••" />
+        </div>
+
+        {err && (
+          <div style={{ background:"#FEF0EB", border:`1px solid ${CORAL}40`, borderRadius:8,
+                        padding:"9px 13px", marginBottom:12, fontSize:12.5, color:CORAL,
+                        fontWeight:600, lineHeight:1.5 }}>{err}</div>
+        )}
+        {ok && (
+          <div style={{ background:"#E8F8F1", border:`1px solid ${GREEN}40`, borderRadius:8,
+                        padding:"9px 13px", marginBottom:12, fontSize:12.5, color:GREEN,
+                        fontWeight:600 }}>{ok}</div>
+        )}
+
+        <Btn full onClick={submit} disabled={busy} style={{ padding:12, opacity: busy ? 0.6 : 1 }}>
+          {busy ? "Patientez…" : "Enregistrer"}
+        </Btn>
+      </div>
     </div>
   );
 }
@@ -4422,6 +4597,7 @@ function AuthenticatedApp({ session }) {
   );
   // Le skipper connecté est déduit de son compte
   const [skipperUser, setSkipperUser] = useState(null);
+  const [showAccount, setShowAccount] = useState(false);
 
   const logout = async () => {
     if (window.confirm("Se déconnecter ?")) { try { await window.auth.signOut(); } catch {} }
@@ -4500,13 +4676,22 @@ function AuthenticatedApp({ session }) {
           </div>
         )}
 
-        {/* Déconnexion — accessible à tous */}
-        <button onClick={logout}
-          style={{ background: "rgba(0,0,0,0.35)", border: "none", cursor: "pointer", fontSize: 11.5,
-                   padding: "6px 13px", borderRadius: 20, color: "#fff", fontWeight: 600 }}>
-          ⏻ Déconnexion
-        </button>
+        {/* Mon compte + Déconnexion — accessibles à tous */}
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setShowAccount(true)}
+            style={{ background: "rgba(0,0,0,0.35)", border: "none", cursor: "pointer", fontSize: 11.5,
+                     padding: "6px 13px", borderRadius: 20, color: "#fff", fontWeight: 600 }}>
+            👤 Mon compte
+          </button>
+          <button onClick={logout} title="Déconnexion"
+            style={{ background: "rgba(0,0,0,0.35)", border: "none", cursor: "pointer", fontSize: 11.5,
+                     padding: "6px 13px", borderRadius: 20, color: "#fff", fontWeight: 600 }}>
+            ⏻
+          </button>
+        </div>
       </div>
+
+      {showAccount && <MonCompte session={session} onClose={() => setShowAccount(false)} />}
     </div>
   );
 }
