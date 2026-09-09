@@ -2896,7 +2896,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
         {tab === "revendeurs" && <RevendeursTab sources={sources} saveSources={saveSources} />}
 
         {/* ── Utilisateurs ── */}
-        {tab === "users" && <UsersTab sources={sources} session={session} />}
+        {tab === "users" && <UsersTab sources={sources} session={session} skData={skData} saveSkData={saveSkData} />}
 
         {/* ── WooCommerce tab ── */}
         {tab === "woo" && <WooTab data={data} save={save} notify={notify} />}
@@ -3887,13 +3887,13 @@ const ROLES = [
   { id:"skipper",    label:"Skipper",        icon:"⚓", color:"#2471A3", desc:"Planning et encaissement des soldes" },
 ];
 
-function UsersTab({ sources, session }) {
+function UsersTab({ sources, session, skData, saveSkData }) {
   const [users,   setUsers]   = useState({});
   const [loading, setLoading] = useState(true);
   const [notif,   setNotif]   = useState(null);
   const [adding,  setAdding]  = useState(false);
   const [editUid, setEditUid] = useState(null);
-  const [form,    setForm]    = useState({ email:"", password:"", name:"", role:"commercial", refKey:"" });
+  const [form,    setForm]    = useState({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"" });
   const [editF,   setEditF]   = useState({ name:"", role:"", refKey:"" });
   const [busy,    setBusy]    = useState(false);
 
@@ -3919,17 +3919,44 @@ function UsersTab({ sources, session }) {
 
   useEffect(() => { refresh(); }, []);
 
+  const SK_PALETTE = ["#2471A3","#8E44AD","#C0392B","#1E8449","#E67E22","#16A085","#1A5F7A","#7F8C8D"];
+
   const create = async () => {
     if (!form.email.trim() || !form.password) { toast("Email et mot de passe requis", false); return; }
     if (form.password.length < 6)             { toast("Mot de passe : 6 caractères minimum", false); return; }
-    if (form.role === "commercial" && !form.refKey) { toast("Choisissez le référent associé", false); return; }
+    if (form.role === "commercial" && !form.refKey)   { toast("Choisissez le référent associé", false); return; }
+    if (form.role === "skipper"    && !form.skipperId) { toast("Choisissez le skipper associé", false); return; }
+    if (form.role === "skipper" && form.skipperId === "__new" && !form.name.trim()) {
+      toast("Renseignez le nom du nouveau skipper", false); return;
+    }
+
     setBusy(true);
+    const mail = form.email.trim().toLowerCase();
     const d = await call({ action:"create", ...form });
+
+    // Rattacher le compte au profil skipper
+    if (d.success && form.role === "skipper") {
+      const skippers = [...(skData?.skippers || [])];
+      if (form.skipperId === "__new") {
+        skippers.push({
+          id: uid(),
+          name: form.name.trim(),
+          email: mail,
+          color: SK_PALETTE[skippers.length % SK_PALETTE.length],
+          active: true,
+        });
+      } else {
+        const i = skippers.findIndex(s => s.id === form.skipperId);
+        if (i >= 0) skippers[i] = { ...skippers[i], email: mail };
+      }
+      try { await saveSkData({ ...skData, skippers }); } catch {}
+    }
+
     setBusy(false);
     if (d.success) {
-      toast("Compte créé ✓");
+      toast(form.role === "skipper" ? "Compte créé et rattaché ✓" : "Compte créé ✓");
       setAdding(false);
-      setForm({ email:"", password:"", name:"", role:"commercial", refKey:"" });
+      setForm({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"" });
       refresh();
     } else toast(d.error || "Création impossible", false);
   };
@@ -4000,6 +4027,25 @@ function UsersTab({ sources, session }) {
               </FSelect>
               <div style={{ fontSize:11, color:"#888", marginTop:4 }}>
                 Détermine les réservations visibles dans « Mes réservations ».
+              </div>
+            </div>
+          )}
+
+          {form.role === "skipper" && (
+            <div style={{ marginBottom:14 }}>
+              <FSelect label="Skipper associé" value={form.skipperId} onChange={e=>setForm(f=>({...f, skipperId:e.target.value}))}>
+                <option value="">— Sélectionner —</option>
+                {(skData?.skippers || []).map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.email ? ` — déjà lié à ${s.email}` : ""}
+                  </option>
+                ))}
+                <option value="__new">+ Créer un nouveau skipper</option>
+              </FSelect>
+              <div style={{ fontSize:11, color:"#888", marginTop:4 }}>
+                {form.skipperId === "__new"
+                  ? "Un nouveau profil skipper sera créé avec le nom saisi ci-dessous."
+                  : "Rattache le compte à son planning et à ses encaissements."}
               </div>
             </div>
           )}
@@ -4085,6 +4131,16 @@ function UsersTab({ sources, session }) {
                     Référent : {u.refKey ? (sources[u.refKey]?.label || u.refKey) : <span style={{ color:CORAL, fontWeight:600 }}>non défini</span>}
                   </div>
                 )}
+                {u.role === "skipper" && (() => {
+                  const sk = (skData?.skippers || []).find(s => (s.email || "").toLowerCase() === (u.email || "").toLowerCase());
+                  return (
+                    <div style={{ fontSize:11.5, color:"#888", marginBottom:8 }}>
+                      Skipper : {sk
+                        ? sk.name
+                        : <span style={{ color:CORAL, fontWeight:600 }}>non rattaché — renseignez son email dans Admin → Skippers</span>}
+                    </div>
+                  );
+                })()}
                 <div style={{ fontSize:11, color: u.active===false ? CORAL : GREEN, fontWeight:600, marginBottom:9 }}>
                   {u.active===false ? "○ Désactivé" : "● Actif"}
                 </div>
