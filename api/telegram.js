@@ -1,5 +1,7 @@
 // api/telegram.js — Envoie une notification Telegram à l'admin
 
+import { verifyIdToken } from './_firebase.js';
+
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
 
@@ -10,6 +12,11 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST')   return res.status(405).json({ error: 'Method not allowed' });
+
+
+  // Réservé aux utilisateurs authentifiés de l'application
+  const _auth = await verifyIdToken((req.headers.authorization || '').replace('Bearer ', ''));
+  if (!_auth) return res.status(401).json({ error: 'Authentification requise' });
 
   const { message } = req.body;
   if (!message)    return res.status(400).json({ error: 'Message manquant' });
