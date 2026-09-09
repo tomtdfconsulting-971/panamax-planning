@@ -517,7 +517,7 @@ function BookingForm({ form, set, onSave, onCancel, title, admin }) {
 // ════════════════════════════════════════════════════════════════
 // RESELLER CALENDAR PORTAL
 // ════════════════════════════════════════════════════════════════
-function ResellerPortal({ data, save }) {
+function ResellerPortal({ data, save, session }) {
   const today = new Date();
   const [year,  setYear]  = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
