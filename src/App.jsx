@@ -84,12 +84,12 @@ async function generateStripeLink({ amount, clientName, clientEmail, dateLabel, 
       body: JSON.stringify({ amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId }),
     });
     const data = await res.json();
-    if (data.url) return data.url;
-    console.error('Stripe error:', data.error);
-    return null;
+    if (data.url) return { url: data.url };
+    console.error('Stripe error:', res.status, data);
+    return { error: data.error || `Erreur ${res.status}` };
   } catch (err) {
     console.error('generateStripeLink error:', err);
-    return null;
+    return { error: err.message };
   }
 }
 
@@ -4353,7 +4353,7 @@ function StripeButton({ bk, dateLabel, dateId, boatId, small }) {
 
   const handleStripe = async () => {
     setLoading(true);
-    const url = await generateStripeLink({
+    const r = await generateStripeLink({
       amount:      reste,
       clientName:  bk.name,
       clientEmail: bk.email || '',
@@ -4363,7 +4363,8 @@ function StripeButton({ bk, dateLabel, dateId, boatId, small }) {
       boatId,
     });
     setLoading(false);
-    if (!url) { alert('Erreur lors de la génération du lien Stripe'); return; }
+    if (r.error) { alert(`Lien de paiement impossible :\n\n${r.error}`); return; }
+    const url = r.url;
 
     // Ouvrir le menu de choix
     const choice = window.confirm(
