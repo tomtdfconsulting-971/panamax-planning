@@ -4305,14 +4305,19 @@ function AuthenticatedApp({ session }) {
     if (window.confirm("Se déconnecter ?")) { try { await window.auth.signOut(); } catch {} }
   };
 
-  // Rattacher le compte skipper au profil de la liste des skippers
+  // Rattacher le compte au profil skipper correspondant
   useEffect(() => {
-    if (session.role !== "skipper" || !skData?.skippers) return;
-    const match = skData.skippers.find(s =>
-      (s.email && s.email.toLowerCase() === session.email.toLowerCase()) ||
-      (s.name  && s.name.toLowerCase()  === (session.name || "").toLowerCase())
-    );
-    setSkipperUser(match || { id: session.uid, name: session.name, color: "#2471A3", active: true });
+    if (session.role === "skipper") {
+      const match = (skData?.skippers || []).find(s =>
+        (s.email && s.email.toLowerCase() === session.email.toLowerCase()) ||
+        (s.name  && s.name.toLowerCase()  === (session.name || "").toLowerCase())
+      );
+      setSkipperUser(match || { id: session.uid, name: session.name, color: "#2471A3", active: true });
+    } else if (session.role === "admin") {
+      // L'admin consulte la vue skipper sous sa propre identité :
+      // les encaissements lui sont attribués, pas à un skipper existant.
+      setSkipperUser({ id: session.uid, name: session.name, color: DARK, active: true });
+    }
   }, [session, skData]);
 
   if (loading) return (
@@ -4342,9 +4347,19 @@ function AuthenticatedApp({ session }) {
                    session={session} onLogout={logout} />
       )}
 
-      {mode === "skipper" && skipperUser && (
-        <SkipperView data={data} save={save} skData={skData} saveSkData={saveSkData}
-                     skipperUser={skipperUser} onLogout={logout} />
+      {mode === "skipper" && (
+        skipperUser
+          ? <SkipperView data={data} save={save} skData={skData} saveSkData={saveSkData}
+                         skipperUser={skipperUser} onLogout={logout} />
+          : <div style={{ minHeight:"100vh", background:"#EBF7FA", display:"flex", flexDirection:"column",
+                          alignItems:"center", justifyContent:"center", gap:12, padding:24, textAlign:"center",
+                          fontFamily:"'Segoe UI', system-ui, sans-serif" }}>
+              <div style={{ fontSize:40 }}>⚓</div>
+              <div style={{ color:TEAL, fontWeight:700 }}>Profil skipper introuvable</div>
+              <div style={{ color:"#888", fontSize:13, maxWidth:300, lineHeight:1.6 }}>
+                Ce compte n'est rattaché à aucun skipper. Renseignez son email dans Admin → Skippers.
+              </div>
+            </div>
       )}
 
       {/* ── Barre de navigation selon le rôle ── */}
