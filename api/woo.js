@@ -1,4 +1,6 @@
 // api/woo.js — Proxy WooCommerce Vercel
+import { verifyIdToken, loadUsers } from './_firebase.js';
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -6,6 +8,17 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // Cet endpoint renvoie les coordonnées de dizaines de clients :
+  // il est réservé aux administrateurs.
+  const _u = await verifyIdToken((req.headers.authorization || '').replace('Bearer ', ''));
+  if (!_u) return res.status(401).json({ error: 'Authentification requise' });
+  const _d = await loadUsers();
+  const _me = _d.users[_u.uid];
+  if (!_me || _me.role !== 'admin' || _me.active === false) {
+    return res.status(403).json({ error: 'Action réservée aux administrateurs.' });
+  }
+
 
   // Utilise les variables d'environnement Vercel
   const siteUrl = process.env.WOO_SITE_URL;
