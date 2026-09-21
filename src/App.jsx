@@ -1966,6 +1966,13 @@ function WooTab({ data, save, notify }) {
     return labelFromDate(d);
   };
 
+  // Montant réellement encaissé en ligne (total de la commande)
+  const montantPaye = (order, pax) => {
+    const t = parseFloat(order?.total);
+    if (Number.isFinite(t) && t >= 0) return Math.round(t * 100) / 100;
+    return 15 * Math.max(1, pax || 1);
+  };
+
   // Get meta value from order meta_data array
   const meta = (order, key) => {
     const m = (order.meta_data || []).find(m => m.key === key);
@@ -1999,8 +2006,20 @@ function WooTab({ data, save, notify }) {
       const email    = order.billing?.email || "";
 
       // Check if already imported (by order id in notes)
-      const alreadyIn = data.dates.some(d => d.boats.some(b => b.bookings.some(bk => String(bk.wooOrderId ?? bk.woo_order_id ?? '') === String(order.id))));
-      if (alreadyIn) { mapped.push({ order, status: "already", label: label1 }); continue; }
+      const paid = montantPaye(order, adults + children);
+      let existingBk = null;
+      for (const d of data.dates) for (const b of d.boats) for (const bk of b.bookings)
+        if (String(bk.wooOrderId ?? bk.woo_order_id ?? '') === String(order.id)) existingBk = bk;
+
+      if (existingBk) {
+        // Réservation déjà présente : compléter l'acompte ou l'email s'ils manquent
+        const fix = {};
+        if (!(existingBk.acompte_amount > 0) && paid > 0) fix.acompte_amount = paid;
+        if (!existingBk.email && email)                   fix.email = email;
+        if (Object.keys(fix).length) mapped.push({ order, status: "repair", label: label1, name, adults, children, fix });
+        else                         mapped.push({ order, status: "already", label: label1 });
+        continue;
+      }
 
       // Find date entry for preferred date, fallback to second date
       let chosenLabel = null;
@@ -2028,7 +2047,7 @@ function WooTab({ data, save, notify }) {
         label: chosenLabel,
         usedFallback: chosenLabel === label2,
         dateEntry, boat,
-        booking: { id: uid(), adults, children, name, phone, source: "woo", price: children > 0 ? adults * P_AD + children * P_CH : adults * P_AD, notes: [`#${order.id}`, email, infoComp].filter(Boolean).join(" · "), status: "confirmed", wooOrderId: order.id, woo_order_id: order.id, ts: Date.now() }
+        booking: { id: uid(), adults, children, name, phone, email, phone_prefix: "+33", acompte_amount: paid, source: "woo", price: children > 0 ? adults * P_AD + children * P_CH : adults * P_AD, notes: [`#${order.id}`, email, infoComp].filter(Boolean).join(" · "), status: "confirmed", wooOrderId: order.id, woo_order_id: order.id, ts: Date.now() }
       });
     }
     return mapped;
@@ -2056,7 +2075,20 @@ function WooTab({ data, save, notify }) {
   const importReady = () => {
     if (!preview) return;
     let nextData = { ...data };
-    let count = 0;
+    let count = 0, repaired = 0;
+
+    // Compléter les réservations déjà importées (acompte, email)
+    for (const item of preview) {
+      if (item.status !== "repair") continue;
+      const id = String(item.order.id);
+      nextData = { ...nextData, dates: nextData.dates.map(d => ({
+        ...d, boats: d.boats.map(b => ({
+          ...b, bookings: b.bookings.map(bk =>
+            String(bk.wooOrderId ?? bk.woo_order_id ?? '') === id ? { ...bk, ...item.fix } : bk)
+        }))
+      }))};
+      repaired++;
+    }
     for (const item of preview) {
       if (item.status !== "ready") continue;
       const { booking, dateEntry, boat } = item;
@@ -2081,11 +2113,13 @@ function WooTab({ data, save, notify }) {
       count++;
     }
     save(nextData);
-    notify(`${count} commande(s) WooCommerce importée(s) ✓`);
+    const msg = [count && `${count} importée(s)`, repaired && `${repaired} complétée(s)`].filter(Boolean).join(" · ");
+    notify(`${msg || "Rien à faire"} ✓`);
     setPreview(mapOrders(orders)); // refresh preview
   };
 
-  const readyCount = preview ? preview.filter(p => p.status === "ready").length : 0;
+  const readyCount  = preview ? preview.filter(p => p.status === "ready").length  : 0;
+  const repairCount = preview ? preview.filter(p => p.status === "repair").length : 0;
 
   return (
     <div style={{ background: "#fff", borderRadius: 12, padding: 24, border: "1px solid #deeaf0" }}>
@@ -2143,7 +2177,11 @@ function WooTab({ data, save, notify }) {
       <Row gap={10} style={{ marginBottom: 24 }}>
         {mode === "api"  && <Btn onClick={fetchOrders} disabled={loading}>{loading ? "Chargement…" : "🔄 Récupérer les commandes"}</Btn>}
         {mode === "json" && <Btn onClick={() => { try { const raw = JSON.parse(jsonText); setOrders(raw); setPreview(mapOrders(raw)); setError(null); } catch { setError("JSON invalide — vérifiez le contenu collé."); } }} disabled={!jsonText.trim()}>🔍 Analyser le JSON</Btn>}
-        {readyCount > 0 && <Btn variant="success" onClick={importReady}>✓ Importer {readyCount} commande(s)</Btn>}
+        {(readyCount > 0 || repairCount > 0) && (
+          <Btn variant="success" onClick={importReady}>
+            ✓ {[readyCount && `Importer ${readyCount}`, repairCount && `Compléter ${repairCount}`].filter(Boolean).join(" · ")}
+          </Btn>
+        )}
       </Row>
 
       {error && (
@@ -2156,10 +2194,10 @@ function WooTab({ data, save, notify }) {
       {preview && (
         <div>
           <div style={{ fontWeight: 700, color: TEAL, marginBottom: 12, fontSize: 15 }}>
-            Aperçu — {preview.length} commande(s) · {readyCount} à importer
+            Aperçu — {preview.length} commande(s) · {readyCount} à importer{repairCount ? ` · ${repairCount} à compléter` : ""}
           </div>
           {preview.map((item, i) => {
-            const icon = item.status === "ready" ? (item.usedFallback ? "🟡" : "🟢") : item.status === "already" ? "✅" : "🔴";
+            const icon = item.status === "ready" ? (item.usedFallback ? "🟡" : "🟢") : item.status === "already" ? "✅" : item.status === "repair" ? "🔧" : "🔴";
             const bname = item.boat?.name === "Aloes Vera" ? "Aloès Vera" : item.boat?.name;
             return (
               <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 0", borderBottom: "1px solid #f0f5f7", fontSize: 13 }}>
@@ -2181,6 +2219,14 @@ function WooTab({ data, save, notify }) {
                       {item.infoComp && <><span style={{ margin: "0 8px", color: "#ddd" }}>·</span><span style={{ color: "#888", fontStyle: "italic" }}>"{item.infoComp}"</span></>}
                     </>}
                     {item.status === "already" && <span style={{ color: GREEN }}>✅ Déjà importée — {item.label}</span>}
+                    {item.status === "repair"  && (
+                      <span style={{ color: ORANGE }}>
+                        🔧 Déjà importée — {item.label} · à compléter :
+                        {item.fix.acompte_amount != null && ` acompte ${fmtEur(item.fix.acompte_amount)}`}
+                        {item.fix.acompte_amount != null && item.fix.email && ","}
+                        {item.fix.email && ` email`}
+                      </span>
+                    )}
                     {item.status === "full"    && <span style={{ color: CORAL }}>🚫 Aucune disponibilité sur {item.label}{item.label2 ? ` ni ${item.label2}` : ""}</span>}
                   </div>
                 </div>
