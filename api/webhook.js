@@ -54,6 +54,15 @@ function labelFromDateStr(dateStr) {
   return `${DAYS[d.getDay()]} ${String(day).padStart(2,'0')}/${String(month).padStart(2,'0')}`;
 }
 
+// Montant réellement encaissé en ligne pour cette commande.
+// On prend le total de la commande plutôt qu'un forfait fixe : il tient
+// compte des éventuels codes promo, et reste juste si le tarif change.
+function montantPaye(order, pax) {
+  const t = parseFloat(order?.total);
+  if (Number.isFinite(t) && t >= 0) return Math.round(t * 100) / 100;
+  return 15 * Math.max(1, pax || 1);   // repli : 15 € par personne
+}
+
 function orderToBooking(order) {
   // Noms de champs WooCommerce Panamax (avec fallbacks)
   const adults   = parseInt(getMeta(order, 'adult_number',  'nombre_adultes',  'adults',   'nb_adultes'))   || 1;
@@ -83,7 +92,7 @@ function orderToBooking(order) {
     source:        'woo',
     price:         adults * P_AD + children * P_CH,
     discount:      0,
-    acompte_amount: 0,
+    acompte_amount: montantPaye(order, adults + children),   // acompte réglé en ligne
     notes,
     status:        'confirmed',
     ts:            Date.now(),
