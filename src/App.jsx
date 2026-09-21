@@ -1976,7 +1976,7 @@ function WooTab({ data, save, notify }) {
       const email    = order.billing?.email || "";
 
       // Check if already imported (by order id in notes)
-      const alreadyIn = data.dates.some(d => d.boats.some(b => b.bookings.some(bk => bk.wooOrderId === order.id)));
+      const alreadyIn = data.dates.some(d => d.boats.some(b => b.bookings.some(bk => String(bk.wooOrderId ?? bk.woo_order_id ?? '') === String(order.id))));
       if (alreadyIn) { mapped.push({ order, status: "already", label: label1 }); continue; }
 
       // Find date entry for preferred date, fallback to second date
@@ -2005,7 +2005,7 @@ function WooTab({ data, save, notify }) {
         label: chosenLabel,
         usedFallback: chosenLabel === label2,
         dateEntry, boat,
-        booking: { id: uid(), adults, children, name, phone, source: "woo", price: children > 0 ? adults * P_AD + children * P_CH : adults * P_AD, notes: [`#${order.id}`, email, infoComp].filter(Boolean).join(" · "), status: "confirmed", wooOrderId: order.id, ts: Date.now() }
+        booking: { id: uid(), adults, children, name, phone, source: "woo", price: children > 0 ? adults * P_AD + children * P_CH : adults * P_AD, notes: [`#${order.id}`, email, infoComp].filter(Boolean).join(" · "), status: "confirmed", wooOrderId: order.id, woo_order_id: order.id, ts: Date.now() }
       });
     }
     return mapped;
