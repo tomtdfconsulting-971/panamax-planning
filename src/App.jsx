@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.21-a";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.21-b";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -214,6 +214,35 @@ function dateFromLabel(label) {
   if (!cands.length) return new Date(cy, mon, day);
   cands.sort((a, b) => Math.abs(a - today) - Math.abs(b - today));
   return cands[0];
+}
+
+// Clé unique d'une date réelle (année incluse), à partir de son libellé
+function dateKeyOf(label) {
+  const d = dateFromLabel(label);
+  return d ? `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}` : null;
+}
+
+// Fusionne les fiches qui désignent la même date réelle.
+// Aucune réservation n'est perdue : celles des doublons rejoignent la
+// première fiche, bateau par bateau.
+function mergeDuplicateDates(dates) {
+  const idxByKey = new Map();
+  const out = [];
+  let merged = 0;
+  for (const e of dates) {
+    const k = dateKeyOf(e.label);
+    if (!k || !idxByKey.has(k)) { if (k) idxByKey.set(k, out.length); out.push(e); continue; }
+    const i = idxByKey.get(k);
+    const boats = out[i].boats.map(b => ({ ...b, bookings: [...b.bookings] }));
+    for (const ob of e.boats) {
+      const tb = boats.find(b => b.name === ob.name);
+      if (tb) { tb.bookings.push(...ob.bookings); tb.closed = !!(tb.closed || ob.closed); }
+      else boats.push({ ...ob, bookings: [...ob.bookings] });
+    }
+    out[i] = { ...out[i], boats };
+    merged++;
+  }
+  return { dates: out, merged };
 }
 
 // Make a fresh two-boat date entry
@@ -572,7 +601,9 @@ function ResellerPortal({ data, save, session }) {
   for (const entry of data.dates) {
     const d = dateFromLabel(entry.label);
     if (!d) continue;
-    byDay[`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`] = entry;
+    const _k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const _n = e => e.boats.reduce((s, b) => s + b.bookings.length, 0);
+    if (!byDay[_k] || _n(entry) > _n(byDay[_k])) byDay[_k] = entry;
   }
 
   // For any cell, return real entry or a virtual one (both boats at full capacity)
@@ -2238,7 +2269,9 @@ function WooTab({ data, save, notify }) {
                         {item.fix.email && ` email`}
                       </span>
                     )}
-                    {item.status === "full"    && <span style={{ color: CORAL }}>🚫 Aucune disponibilité sur {item.label}{item.label2 ? ` ni ${item.label2}` : ""}</span>}
+                    {item.status === "full" && (item.label || item.label2
+                      ? <span style={{ color: CORAL }}>🚫 Aucune disponibilité sur {item.label}{item.label2 ? ` ni ${item.label2}` : ""}</span>
+                      : <span style={{ color: CORAL }}>⚠️ Aucune date renseignée dans la commande — à placer manuellement</span>)}
                   </div>
                 </div>
               </div>
@@ -2274,7 +2307,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   for (const entry of data.dates) {
     const d = dateFromLabel(entry.label);
     if (!d) continue;
-    byDay[`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`] = entry;
+    const _k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const _n = e => e.boats.reduce((s, b) => s + b.bookings.length, 0);
+    if (!byDay[_k] || _n(entry) > _n(byDay[_k])) byDay[_k] = entry;
   }
 
   // Calendar grid
@@ -2703,7 +2738,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
                   {/* Day header */}
                   <div style={{ background:isToday?TEAL:"#F0F8FB", padding:"10px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
-                    onClick={()=>{ if(entry){ setAdminStep("day"); setSelDay(entry.id); } else {
+                    onClick={()=>{ const _ex = entry || data.dates.find(x => dateKeyOf(x.label) === key); if(_ex){ setAdminStep("day"); setSelDay(_ex.id); } else {
                       const lbl=labelFromDate(cell); const newEntry={id:uid(),label:lbl,boats:[{id:uid(),name:"Aloes Vera",emoji:"ferry",bookings:[]},{id:uid(),name:"Panamax",emoji:"boat",bookings:[]}]};
                       const next={...data,dates:[...data.dates,newEntry]}; save(next); setAdminStep("day"); setSelDay(newEntry.id);
                     }}}>
@@ -2822,7 +2857,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             <button key={cell.toISOString()}
               onClick={() => {
                 setAdminStep("day"); setEditing(null); setAdding(null); setAddBoat(null);
-                const e = entry || null;
+                const e = entry || data.dates.find(x => dateKeyOf(x.label) === key) || null;
                 if (e) { setSelDay(e.id); } else {
                   // Auto-create the date entry
                   const lbl = labelFromDate(cell);
@@ -2897,6 +2932,17 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
   const [copied,   setCopied]   = useState(null);
 
   const notify = (msg, ok = true) => { setToast({ msg, ok }); setTimeout(() => setToast(null), 3000); };
+
+  // Réparation automatique : fusionne les fiches en double pour une même date.
+  // Idempotent — une fois fusionnées, il n'y a plus rien à faire.
+  useEffect(() => {
+    if (!data?.dates?.length) return;
+    const { dates, merged } = mergeDuplicateDates(data.dates);
+    if (merged > 0) {
+      save({ ...data, dates });
+      notify(`${merged} date(s) en double fusionnée(s) ✓`);
+    }
+  }, [data]);
   const toggle = id => setExp(e => ({ ...e, [id]: !e[id] }));
 
   const saveEdit = () => {
