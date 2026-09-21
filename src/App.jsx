@@ -185,11 +185,34 @@ function labelFromDate(d) {
   return `${DAYS_LONG[d.getDay()]} ${day}/${mon}`;
 }
 
-// Parse "Mercredi 29/05" → JS Date (current year)
+// Déduit l'année à partir du jour de la semaine contenu dans le libellé :
+// « Vendredi 15/01 » ne peut être que le 15/01/2027 (en 2026, c'était un jeudi).
+// Rétrocompatible : aucune donnée existante n'a besoin d'être modifiée.
+const _WD = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
 function dateFromLabel(label) {
-  const m = label.match(/(\d{1,2})\/(\d{2})/);
+  if (!label) return null;
+  const m = String(label).match(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
   if (!m) return null;
-  return new Date(new Date().getFullYear(), +m[2] - 1, +m[1]);
+  const day = +m[1], mon = +m[2] - 1;
+
+  // Année explicite (JJ/MM/AAAA) : prioritaire
+  if (m[3]) { let y = +m[3]; if (y < 100) y += 2000; return new Date(y, mon, day); }
+
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const cy  = today.getFullYear();
+  const low = String(label).toLowerCase();
+  const wd  = _WD.findIndex(w => low.includes(w));
+
+  // Années candidates autour d'aujourd'hui dont le jour de semaine correspond
+  const cands = [];
+  for (let y = cy - 1; y <= cy + 3; y++) {
+    const d = new Date(y, mon, day);
+    if (d.getMonth() !== mon) continue;            // 29/02 hors année bissextile
+    if (wd === -1 || d.getDay() === wd) cands.push(d);
+  }
+  if (!cands.length) return new Date(cy, mon, day);
+  cands.sort((a, b) => Math.abs(a - today) - Math.abs(b - today));
+  return cands[0];
 }
 
 // Make a fresh two-boat date entry
