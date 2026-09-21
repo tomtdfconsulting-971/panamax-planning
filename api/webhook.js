@@ -76,6 +76,7 @@ function orderToBooking(order) {
   return {
     id:            `woo-${order.id}-${uid()}`,
     woo_order_id:  order.id,
+    wooOrderId:    order.id,     // même marqueur que la synchro manuelle
     name, phone, email,
     phone_prefix:  '+33',
     adults, children,
@@ -150,7 +151,7 @@ export default async function handler(req, res) {
 
     // ── Vérifier doublon ───────────────────────────────────
     const alreadyExists = current.dates.some(d =>
-      d.boats.some(b => b.bookings.some(bk => bk.woo_order_id === order.id))
+      d.boats.some(b => b.bookings.some(bk => String(bk.woo_order_id ?? bk.wooOrderId ?? '') === String(order.id)))
     );
     if (alreadyExists) {
       return res.status(200).json({ message: `Commande #${order.id} déjà importée` });
