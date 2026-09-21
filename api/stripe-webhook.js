@@ -76,30 +76,38 @@ export default async function handler(req, res) {
 
     let updated = false;
 
-    current.dates = current.dates.map(date => {
-      if (date.id !== dateId) return date;
-      return {
-        ...date,
-        boats: date.boats.map(boat => {
-          if (boat.id !== boatId) return boat;
+    // Recherche par identifiant de réservation, unique dans toute la base.
+    // On n'exige plus la même fiche date ni le même bateau : une réservation
+    // peut avoir été transférée par un skipper, ou fusionnée depuis une date
+    // en double, après l'envoi du lien de paiement.
+    let dejaTraite = false;
+    current.dates = current.dates.map(date => ({
+      ...date,
+      boats: date.boats.map(boat => ({
+        ...boat,
+        bookings: boat.bookings.map(bk => {
+          if (bk.id !== bookingId) return bk;
+          // Stripe peut renvoyer le même événement : ne jamais compter deux fois
+          const sessions = Array.isArray(bk.stripe_sessions) ? bk.stripe_sessions
+                         : (bk.stripe_session_id ? [bk.stripe_session_id] : []);
+          if (sessions.includes(session.id)) { dejaTraite = true; return bk; }
+          updated = true;
           return {
-            ...boat,
-            bookings: boat.bookings.map(bk => {
-              if (bk.id !== bookingId) return bk;
-              updated = true;
-              const newAcompte = (bk.acompte_amount || 0) + amountPaid;
-              return {
-                ...bk,
-                acompte_amount:    newAcompte,
-                stripe_paid:       true,
-                stripe_session_id: session.id,
-                stripe_paid_at:    new Date().toISOString(),
-              };
-            }),
+            ...bk,
+            acompte_amount:    (bk.acompte_amount || 0) + amountPaid,
+            stripe_paid:       true,
+            stripe_session_id: session.id,
+            stripe_sessions:   [...sessions, session.id],
+            stripe_paid_at:    new Date().toISOString(),
           };
         }),
-      };
-    });
+      })),
+    }));
+
+    if (dejaTraite) {
+      console.log(`Session ${session.id} déjà enregistrée — ignorée`);
+      return res.status(200).json({ message: 'Paiement déjà enregistré' });
+    }
 
     if (!updated) {
       console.warn(`Booking ${bookingId} non trouvé dans Firebase`);
