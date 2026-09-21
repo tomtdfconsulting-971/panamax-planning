@@ -102,21 +102,30 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
+  // ── Lecture du corps BRUT ──────────────────────────────────
+  // WooCommerce signe le texte exact qu'il envoie (json_encode PHP, qui écrit
+  // \/ et \u00e9). Recalculer la signature sur un JSON reconstruit ne peut
+  // donc jamais correspondre : il faut le corps brut, octet pour octet.
+  const raw = await getRawBody(req);
+
   // ── Vérification signature ─────────────────────────────────
   const secret    = process.env.WOO_WEBHOOK_SECRET;
   const signature = req.headers['x-wc-webhook-signature'];
 
   if (secret && signature) {
-    const body     = JSON.stringify(req.body);
-    const expected = crypto.createHmac('sha256', secret).update(body, 'utf8').digest('base64');
-    if (signature !== expected) {
-      console.error('Signature invalide');
+    const expected = crypto.createHmac('sha256', secret).update(raw, 'utf8').digest('base64');
+    const a = Buffer.from(String(signature));
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      console.error(`Signature invalide (corps reçu : ${raw.length} octets)`);
       return res.status(401).json({ error: 'Invalid signature' });
     }
   }
 
   // ── Parse commande ─────────────────────────────────────────
-  const order = req.body;
+  // Le ping de création est envoyé en « webhook_id=… », pas en JSON
+  let order = null;
+  try { order = JSON.parse(raw); } catch { order = null; }
 
   // WordPress envoie un ping de test sans order.id lors de la création du webhook
   if (!order?.id) {
@@ -124,7 +133,11 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true, message: 'Webhook Panamax actif' });
   }
 
+  // Seules les commandes payées entrent au planning. Une commande « pending »
+  // sera réimportée automatiquement au passage en « processing », à condition
+  // que le webhook « Commande mise à jour » soit configuré dans WooCommerce.
   if (!['completed', 'processing'].includes(order.status)) {
+    console.log(`Commande #${order.id} ignorée pour l'instant — statut « ${order.status} »`);
     return res.status(200).json({ message: `Statut "${order.status}" ignoré` });
   }
 
@@ -208,3 +221,19 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Erreur interne', detail: err.message });
   }
 }
+
+// Lit le corps de la requête tel qu'il a été envoyé, sans reconstruction.
+async function getRawBody(req) {
+  if (typeof req.rawBody === 'string') return req.rawBody;
+  if (Buffer.isBuffer(req.rawBody))    return req.rawBody.toString('utf8');
+  const chunks = [];
+  for await (const chunk of req) chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  const raw = Buffer.concat(chunks).toString('utf8');
+  if (raw) return raw;
+  // Filet de sécurité : si le flux a déjà été consommé en amont
+  if (req.body && typeof req.body === 'object') return JSON.stringify(req.body);
+  return typeof req.body === 'string' ? req.body : '';
+}
+
+// Indispensable : sans cela, Vercel consomme le corps avant nous
+export const config = { api: { bodyParser: false } };
