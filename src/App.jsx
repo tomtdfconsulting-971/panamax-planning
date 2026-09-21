@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
+const APP_VERSION = "2026.09.21-a";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -2007,17 +2008,21 @@ function WooTab({ data, save, notify }) {
 
       // Check if already imported (by order id in notes)
       const paid = montantPaye(order, adults + children);
-      let existingBk = null;
+      let existingBk = null, where = null;
       for (const d of data.dates) for (const b of d.boats) for (const bk of b.bookings)
-        if (String(bk.wooOrderId ?? bk.woo_order_id ?? '') === String(order.id)) existingBk = bk;
+        if (String(bk.wooOrderId ?? bk.woo_order_id ?? '') === String(order.id)) {
+          existingBk = bk;
+          const dd = dateFromLabel(d.label);
+          where = { label: d.label, boat: b.name, date: dd ? dd.toLocaleDateString("fr-FR") : "date illisible" };
+        }
 
       if (existingBk) {
         // Réservation déjà présente : compléter l'acompte ou l'email s'ils manquent
         const fix = {};
         if (!(existingBk.acompte_amount > 0) && paid > 0) fix.acompte_amount = paid;
         if (!existingBk.email && email)                   fix.email = email;
-        if (Object.keys(fix).length) mapped.push({ order, status: "repair", label: label1, name, adults, children, fix });
-        else                         mapped.push({ order, status: "already", label: label1 });
+        if (Object.keys(fix).length) mapped.push({ order, status: "repair", label: label1, name, adults, children, fix, where });
+        else                         mapped.push({ order, status: "already", label: label1, name, adults, children, where });
         continue;
       }
 
@@ -2218,7 +2223,13 @@ function WooTab({ data, save, notify }) {
                       <span style={{ color: GREEN, fontWeight: 700 }}>{spots(item.boat)} place(s) libre(s)</span>
                       {item.infoComp && <><span style={{ margin: "0 8px", color: "#ddd" }}>·</span><span style={{ color: "#888", fontStyle: "italic" }}>"{item.infoComp}"</span></>}
                     </>}
-                    {item.status === "already" && <span style={{ color: GREEN }}>✅ Déjà importée — {item.label}</span>}
+                    {item.status === "already" && <span style={{ color: GREEN }}>✅ Déjà importée</span>}
+                    {(item.status === "already" || item.status === "repair") && item.where && (
+                      <div style={{ fontSize: 12, color: "#888" }}>
+                        Demandée : {item.label || "—"} · Placée : <strong style={{ color: DARK }}>{item.where.label}</strong>
+                        {" "}→ {item.where.date} · {item.where.boat === "Aloes Vera" ? "Aloès Vera" : item.where.boat}
+                      </div>
+                    )}
                     {item.status === "repair"  && (
                       <span style={{ color: ORANGE }}>
                         🔧 Déjà importée — {item.label} · à compléter :
@@ -4442,6 +4453,7 @@ function MonCompte({ session, onClose }) {
           <div style={{ fontSize:11, color:"#aaa", marginTop:2, lineHeight:1.5 }}>
             Pour changer votre adresse email, contactez un administrateur.
           </div>
+          <div style={{ fontSize:10.5, color:"#bbb", marginTop:4 }}>Version {APP_VERSION}</div>
         </div>
 
         {/* Mot de passe */}
