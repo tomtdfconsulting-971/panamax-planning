@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.21-b";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.28-c";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -536,9 +536,9 @@ function BookingForm({ form, set, onSave, onCancel, title, admin }) {
     <div style={{ background: "#F0F8FB", border: `1px solid ${TEAL}40`, borderRadius: 10, padding: 16, margin: "10px 0" }}>
       <div style={{ fontWeight: 700, color: TEAL, fontSize: 13, marginBottom: 14 }}>{title}</div>
       <Grid cols={`repeat(${admin ? 4 : 3},1fr)`} gap={10} style={{ marginBottom: 12 }}>
-        <FInput label="Adultes" type="number" min="0" value={form.adults}
+        <FInput label="Adultes" type="number" onFocus={e => e.target.select()} min="0" value={form.adults}
           onChange={e => { const v = Math.max(0, +e.target.value); upd("adults", v); upd("price", v * P_AD + form.children * P_CH); }} />
-        <FInput label="Enfants" type="number" min="0" value={form.children}
+        <FInput label="Enfants" type="number" onFocus={e => e.target.select()} min="0" value={form.children}
           onChange={e => { const v = Math.max(0, +e.target.value); upd("children", v); upd("price", form.adults * P_AD + v * P_CH); }} />
         <FSelect label="Source" value={form.source} onChange={e => upd("source", e.target.value)}>
           <option value="">— Sélectionner —</option>
@@ -548,7 +548,7 @@ function BookingForm({ form, set, onSave, onCancel, title, admin }) {
           <div>
             <Label>Prix €</Label>
             <Row gap={4}>
-              <input type="number" style={{ ...inputStyle, flex: 1 }} value={form.price} onChange={e => upd("price", Math.max(0, +e.target.value))} />
+              <input type="number" onFocus={e => e.target.select()} style={{ ...inputStyle, flex: 1 }} value={form.price} onChange={e => upd("price", Math.max(0, +e.target.value))} />
               <button onClick={() => upd("price", form.adults * P_AD + form.children * P_CH)}
                 style={{ background: TEAL, color: "#fff", border: "none", borderRadius: 5, padding: "0 8px", cursor: "pointer", fontSize: 10, fontWeight: 700, height: 36, flexShrink: 0 }}>Auto</button>
             </Row>
@@ -878,13 +878,13 @@ function ResellerPortal({ data, save, session }) {
           </div>
           <div style={{ marginBottom: 14 }}>
             <Label>Remise commerciale (€)</Label>
-            <input type="number" min="0" value={form.discount||0}
+            <input type="number" onFocus={e => e.target.select()} min="0" value={form.discount || ""}
               onChange={e => { const d=Math.max(0,+e.target.value); setForm(f=>({...f,discount:d,price:Math.max(0,f.adults*P_AD+f.children*P_CH-d)})); }}
               style={inputStyle} placeholder="0" />
           </div>
           <div style={{ marginBottom: 14 }}>
             <Label>Acompte versé (€)</Label>
-            <input type="number" min="0" value={form.acompte_amount||0}
+            <input type="number" onFocus={e => e.target.select()} min="0" value={form.acompte_amount || ""}
               onChange={e => setForm(f=>({...f,acompte_amount:Math.max(0,+e.target.value)}))}
               style={inputStyle} placeholder="0" />
           </div>
@@ -1129,11 +1129,11 @@ function ResellerPortal({ data, save, session }) {
           </div>
           <div style={{ marginBottom: 14 }}>
             <Label>Remise commerciale (€)</Label>
-            <input type="number" min="0" value={editForm.discount||0} onChange={e => { const d=Math.max(0,+e.target.value); setEditForm(f=>({...f,discount:d,price:Math.max(0,f.adults*P_AD+f.children*P_CH-d)})); }} style={inputStyle} placeholder="0" />
+            <input type="number" onFocus={e => e.target.select()} min="0" value={editForm.discount || ""} onChange={e => { const d=Math.max(0,+e.target.value); setEditForm(f=>({...f,discount:d,price:Math.max(0,f.adults*P_AD+f.children*P_CH-d)})); }} style={inputStyle} placeholder="0" />
           </div>
           <div style={{ marginBottom: 14 }}>
             <Label>Acompte versé (€)</Label>
-            <input type="number" min="0" value={editForm.acompte_amount||0} onChange={e => setEditForm(f=>({...f,acompte_amount:Math.max(0,+e.target.value)}))} style={inputStyle} placeholder="0" />
+            <input type="number" onFocus={e => e.target.select()} min="0" value={editForm.acompte_amount || ""} onChange={e => setEditForm(f=>({...f,acompte_amount:Math.max(0,+e.target.value)}))} style={inputStyle} placeholder="0" />
           </div>
           <div style={{ marginBottom: 22 }}><PriceBreakdown form={editForm} /></div>
           {!phoneOk(editForm) && (
@@ -2388,13 +2388,13 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         </div>
         <div style={{ marginBottom: 14 }}>
           <Label>Remise commerciale (€)</Label>
-          <input type="number" min="0" value={adding.form.discount||0}
+          <input type="number" onFocus={e => e.target.select()} min="0" value={adding.form.discount || ""}
             onChange={e => { const d=Math.max(0,+e.target.value); setAdding(a=>({...a,form:{...a.form,discount:d,price:Math.max(0,a.form.adults*P_AD+a.form.children*P_CH-d)}})); }}
             style={inputStyle} placeholder="0" />
         </div>
         <div style={{ marginBottom: 14 }}>
           <Label>Acompte versé (€)</Label>
-          <input type="number" min="0" value={adding.form.acompte_amount||0}
+          <input type="number" onFocus={e => e.target.select()} min="0" value={adding.form.acompte_amount || ""}
             onChange={e => setAdding(a=>({...a,form:{...a.form,acompte_amount:Math.max(0,+e.target.value)}}))}
             style={inputStyle} placeholder="0" />
         </div>
@@ -2478,13 +2478,13 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         </div>
         <div style={{ marginBottom: 14 }}>
           <Label>Remise commerciale (€)</Label>
-          <input type="number" min="0" value={editing.form.discount||0}
+          <input type="number" onFocus={e => e.target.select()} min="0" value={editing.form.discount || ""}
             onChange={e => { const d=Math.max(0,+e.target.value); setEditing(ed=>({...ed,form:{...ed.form,discount:d,price:Math.max(0,ed.form.adults*P_AD+ed.form.children*P_CH-d)}})); }}
             style={inputStyle} placeholder="0" />
         </div>
         <div style={{ marginBottom: 14 }}>
           <Label>Acompte versé (€)</Label>
-          <input type="number" min="0" value={editing.form.acompte_amount||0}
+          <input type="number" onFocus={e => e.target.select()} min="0" value={editing.form.acompte_amount || ""}
             onChange={e => setEditing(ed=>({...ed,form:{...ed.form,acompte_amount:Math.max(0,+e.target.value)}}))}
             style={inputStyle} placeholder="0" />
         </div>
@@ -3580,7 +3580,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           {PAY_METHODS.map(m=>(
                             <Row key={m.id} gap={8} style={{ marginBottom:7, alignItems:"center" }}>
                               <span style={{ background:m.color,color:"#fff",fontSize:10,padding:"2px 8px",borderRadius:7,fontWeight:700,minWidth:70,textAlign:"center" }}>{m.icon} {m.label}</span>
-                              <input type="number" min="0" value={payFormAll.find(p=>p.methode===m.id)?.montant||0}
+                              <input type="number" onFocus={e => e.target.select()} min="0" value={payFormAll.find(p=>p.methode===m.id)?.montant || ""}
                                 onChange={e=>setPayFormAll(f=>f.map(p=>p.methode===m.id?{...p,montant:Math.max(0,+e.target.value)}:p))}
                                 style={{ ...inputStyle, flex:1 }} placeholder="0" />
                               <span style={{ fontSize:11, color:"#888" }}>€</span>
@@ -3782,7 +3782,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           {PAY_METHODS.map(m => (
                             <Row key={m.id} gap={8} style={{ marginBottom:8, alignItems:"center", flexWrap:"nowrap" }}>
                               <span style={{ background:m.color, color:"#fff", fontSize:11, padding:"3px 10px", borderRadius:8, fontWeight:700, minWidth:80, textAlign:"center" }}>{m.icon} {m.label}</span>
-                              <input type="number" min="0" value={payForm.find(p=>p.methode===m.id)?.montant||0}
+                              <input type="number" onFocus={e => e.target.select()} min="0" value={payForm.find(p=>p.methode===m.id)?.montant || ""}
                                 onChange={e => setPayForm(f => f.map(p => p.methode===m.id ? {...p, montant:Math.max(0,+e.target.value)} : p))}
                                 style={{ ...inputStyle, width:100, flex:1 }} placeholder="0" />
                               <span style={{ fontSize:12, color:"#888" }}>€</span>
