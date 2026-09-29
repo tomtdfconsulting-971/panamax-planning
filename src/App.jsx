@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.28-c";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.28-d";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -699,7 +699,7 @@ function ResellerPortal({ data, save, session }) {
           {form.phone && <div>📞 {form.phone}</div>}
           <div style={{ color: TEAL, fontWeight: 700 }}>💰 {fmtEur(form.adults * P_AD + form.children * P_CH)}</div>
         </div>
-        <Btn full onClick={reset} style={{ padding: 14, fontSize: 15 }}>+ Nouvelle réservation</Btn>
+        <Btn full onClick={reset} style={{ padding: 14, fontSize: 15 }}>← Retour au planning</Btn>
       </div>
     </div>
   );
