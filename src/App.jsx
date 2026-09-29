@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.29-h";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.29-i";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -164,14 +164,43 @@ async function sendConfirmationEmail(booking, dateLabel) {
     console.error("sendConfirmationEmail error:", err);
   }
 }
+// Un numéro déjà au format international ("+41 78…" ou "0041 78…") porte
+// son propre indicatif : lui en ajouter un second donnait des numéros
+// injoignables du type +3341786965290.
 const fullPhone = (bk) => {
   if (!bk.phone) return null;
-  const digits = bk.phone.replace(/[^0-9]/g, "");
-  const prefix = (bk.phone_prefix || "+33").replace("+", "");
-  // Remove leading 0 if present (e.g. 0612... → 612...)
-  const clean = digits.startsWith("0") ? digits.slice(1) : digits;
+  const brut   = String(bk.phone).trim();
+  const digits = brut.replace(/[^0-9]/g, "");
+  if (!digits) return null;
+  if (brut.startsWith("+"))      return `+${digits}`;
+  if (digits.startsWith("00"))   return `+${digits.slice(2)}`;
+  const prefix = (bk.phone_prefix || "+33").replace(/[^0-9]/g, "");
+  const clean  = digits.startsWith("0") ? digits.slice(1) : digits;
   return `+${prefix}${clean}`;
 };
+
+// Sépare un numéro international en indicatif + numéro local, pour que les
+// fiches importées portent le bon pays (indicatif le plus long d'abord).
+function splitPhone(raw) {
+  const brut   = String(raw || "").trim();
+  const digits = brut.replace(/[^0-9]/g, "");
+  if (!digits) return { phone_prefix: "+33", phone: "" };
+
+  let inter = null;
+  if (brut.startsWith("+"))    inter = digits;
+  else if (digits.startsWith("00")) inter = digits.slice(2);
+
+  if (inter) {
+    const connus = [...PHONE_PREFIXES].sort((a, b) => b.code.length - a.code.length);
+    for (const p of connus) {
+      const code = p.code.replace("+", "");
+      if (inter.startsWith(code)) return { phone_prefix: p.code, phone: inter.slice(code.length) };
+    }
+    return { phone_prefix: "", phone: `+${inter}` };   // pays inconnu : on garde tel quel
+  }
+  // Numéro local : indicatif français par défaut, comme avant
+  return { phone_prefix: "+33", phone: digits };
+}
 const boatPax  = b  => b.bookings.reduce((s, bk) => s + bk.adults + bk.children, 0);
 const boatRev  = b  => b.bookings.reduce((s, bk) => s + bk.price, 0);
 const fmtEur   = n  => n.toLocaleString("fr") + "€";
@@ -2083,7 +2112,7 @@ function WooTab({ data, save, notify }) {
         label: chosenLabel,
         usedFallback: chosenLabel === label2,
         dateEntry, boat,
-        booking: { id: uid(), adults, children, name, phone, email, phone_prefix: "+33", acompte_amount: paid, source: "woo", price: children > 0 ? adults * P_AD + children * P_CH : adults * P_AD, notes: [`#${order.id}`, email, infoComp].filter(Boolean).join(" · "), status: "confirmed", wooOrderId: order.id, woo_order_id: order.id, ts: Date.now() }
+        booking: { id: uid(), adults, children, name, ...splitPhone(phone), email, acompte_amount: paid, source: "woo", price: children > 0 ? adults * P_AD + children * P_CH : adults * P_AD, notes: [`#${order.id}`, email, infoComp].filter(Boolean).join(" · "), status: "confirmed", wooOrderId: order.id, woo_order_id: order.id, ts: Date.now() }
       });
     }
     return mapped;
