@@ -76,7 +76,20 @@ function orderToBooking(order) {
 
   const P_AD = 115, P_CH = 95;
   const name  = `${order.billing?.first_name || ''} ${order.billing?.last_name || ''}`.trim() || `Commande #${order.id}`;
-  const phone = (order.billing?.phone || '').replace(/\s/g, '');
+  // Un numéro déjà international garde son propre indicatif : sans cela,
+  // un numéro suisse +41… devenait +3341… et restait injoignable.
+  const brutTel = (order.billing?.phone || '').trim();
+  const chiffres = brutTel.replace(/[^0-9]/g, '');
+  let phone = chiffres, phone_prefix = '+33';
+  let inter = null;
+  if (brutTel.startsWith('+'))       inter = chiffres;
+  else if (chiffres.startsWith('00')) inter = chiffres.slice(2);
+  if (inter) {
+    const codes = ['590','596','262','1','33','32','41','49','34','39','44','351','352','31','43','352'];
+    const trouve = codes.sort((a,b) => b.length - a.length).find(k => inter.startsWith(k));
+    phone_prefix = trouve ? `+${trouve}` : '';
+    phone        = trouve ? inter.slice(trouve.length) : `+${inter}`;
+  }
   const email = order.billing?.email || '';
 
   // Log pour debug
@@ -87,7 +100,7 @@ function orderToBooking(order) {
     woo_order_id:  order.id,
     wooOrderId:    order.id,     // même marqueur que la synchro manuelle
     name, phone, email,
-    phone_prefix:  '+33',
+    phone_prefix,
     adults, children,
     source:        'woo',
     price:         adults * P_AD + children * P_CH,
