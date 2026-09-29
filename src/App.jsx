@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.28-f";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.28-g";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -3080,9 +3080,6 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
     navigator.clipboard.writeText(toWA(entry)).then(() => { setCopied(entry.id); setTimeout(() => setCopied(null), 2000); notify("Copié 📋"); });
   };
 
-  const gRev = data.dates.reduce((s, d) => s + d.boats.reduce((s2, b) => s2 + boatRev(b), 0), 0);
-  const gPax = data.dates.reduce((s, d) => s + d.boats.reduce((s2, b) => s2 + boatPax(b), 0), 0);
-  const gBk  = data.dates.reduce((s, d) => s + d.boats.reduce((s2, b) => s2 + b.bookings.length, 0), 0);
 
 
   return (
@@ -3105,14 +3102,6 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
 
         {/* ── Planning tab ── */}
         {tab === "planning" && (<>
-          <Grid cols="repeat(auto-fit,minmax(90px,1fr))" gap={8} style={{ marginBottom: 14 }}>
-            {[{ v: fmtEur(gRev), l: "Chiffre d'affaires", i: "💰" }, { v: gPax, l: "Passagers", i: "👥" }, { v: gBk, l: "Réservations", i: "📋" }].map(({ v, l, i }) => (
-              <div key={l} style={{ background: "#fff", borderRadius: 12, padding: "14px 18px", textAlign: "center", border: "1px solid #e0eef3" }}>
-                <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>{i} {l}</div>
-                <div style={{ fontSize: 24, fontWeight: 700, color: TEAL }}>{v}</div>
-              </div>
-            ))}
-          </Grid>
           <AdminCalendar data={data} save={save} notify={notify} editing={editing} setEditing={setEditing} adding={adding} setAdding={setAdding} delBk={delBk} setDelBk={setDelBk} saveEdit={saveEdit} saveAdd={saveAdd} doDelBk={doDelBk} copied={copied} copyWA={copyWA} />
 
 
