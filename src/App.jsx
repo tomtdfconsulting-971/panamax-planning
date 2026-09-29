@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.28-g";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.29-h";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -3175,6 +3175,8 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
   const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
   const planning = skData?.planning || {};
   const skippers = skData?.skippers || [];
+  // Pour l'affichage des noms : les skippers supprimés restent résolvables
+  const connus   = [...skippers, ...(skData?.archived || [])];
 
   const prevMonth = () => { if(curMonth===0){setCurYear(y=>y-1);setCurMonth(11);}else setCurMonth(m=>m-1); };
   const nextMonth = () => { if(curMonth===11){setCurYear(y=>y+1);setCurMonth(0);}else setCurMonth(m=>m+1); };
@@ -3211,6 +3213,62 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
     saveSkData({ ...skData, skippers: skippers.map(s => s.id===id ? {...s,active:!s.active} : s) });
   };
 
+  // Ce qu'un skipper laisse derrière lui : encaissements et affectations
+  const empreinte = (id) => {
+    let encaissements = 0;
+    for (const d of data.dates) for (const b of d.boats) for (const bk of b.bookings)
+      if (bk.skipper_encaisseur === id && bk.paiements_solde?.length) encaissements++;
+    const aujourdhui = new Date(); aujourdhui.setHours(0,0,0,0);
+    let passees = 0, futures = 0;
+    for (const [label, a] of Object.entries(planning)) {
+      if (a?.aloes !== id && a?.panamax !== id) continue;
+      const dd = dateFromLabel(label);
+      (dd && dd >= aujourdhui) ? futures++ : passees++;
+    }
+    return { encaissements, passees, futures };
+  };
+
+  // Suppression. Si le skipper a un historique, son nom est archivé pour que
+  // la comptabilité et le planning passé restent lisibles.
+  const removeSkipper = (sk) => {
+    const e = empreinte(sk.id);
+    const historique = e.encaissements > 0 || e.passees > 0;
+    const details = [
+      e.encaissements ? `${e.encaissements} encaissement(s)` : null,
+      e.futures       ? `${e.futures} sortie(s) à venir`     : null,
+      e.passees       ? `${e.passees} sortie(s) passée(s)`   : null,
+    ].filter(Boolean).join(" · ");
+
+    const msg = `Supprimer le skipper ${sk.name} ?\n\n`
+      + (details ? `${details}\n\n` : "")
+      + (e.futures ? "Ses sorties à venir seront libérées et devront être réattribuées.\n" : "")
+      + (historique ? "Son nom reste affiché dans la comptabilité et le planning passé." : "Aucun historique : suppression définitive.");
+    if (!window.confirm(msg)) return;
+
+    // Libérer uniquement les affectations à venir
+    const aujourdhui = new Date(); aujourdhui.setHours(0,0,0,0);
+    const p = { ...planning };
+    for (const [label, a] of Object.entries(p)) {
+      const dd = dateFromLabel(label);
+      if (!dd || dd < aujourdhui) continue;
+      const na = { ...a };
+      if (na.aloes   === sk.id) delete na.aloes;
+      if (na.panamax === sk.id) delete na.panamax;
+      if (Object.keys(na).length) p[label] = na; else delete p[label];
+    }
+
+    const next = {
+      ...skData,
+      planning: p,
+      skippers: skippers.filter(s => s.id !== sk.id),
+      archived: historique
+        ? [...(skData.archived || []), { id: sk.id, name: sk.name, color: sk.color }]
+        : (skData.archived || []),
+    };
+    saveSkData(next);
+    toast(historique ? `${sk.name} supprimé · historique conservé` : `${sk.name} supprimé`);
+  };
+
   const SK_COLORS = ["#2471A3","#8E44AD","#C0392B","#1E8449","#E67E22","#16A085","#1A5F7A","#7F8C8D"];
 
   const PlanningView = () => {
@@ -3237,8 +3295,8 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
             const label  = labelFromDate(cell);
             const assign = planning[label] || {};
             const isToday= cell.toDateString()===today.toDateString();
-            const aSk    = skippers.find(s=>s.id===assign.aloes);
-            const pSk    = skippers.find(s=>s.id===assign.panamax);
+            const aSk    = connus.find(s=>s.id===assign.aloes);
+            const pSk    = connus.find(s=>s.id===assign.panamax);
             return (
               <button key={cell.toISOString()} onClick={()=>setDayModal({label})}
                 style={{ background:isToday?`${TEAL}18`:(aSk||pSk)?"#F0F8FB":"#fff", border:isToday?`2px solid ${TEAL}`:"1px solid #eee", borderRadius:7, padding:"4px 2px", cursor:"pointer", minHeight:56, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
@@ -3322,6 +3380,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
                 <Row gap={6}>
                   <button onClick={()=>{ setEditSk(sk); setEditForm({name:sk.name,email:sk.email||""}); setAddingSk(false); }} style={{ background:"#EBF7FA", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
                   <button onClick={()=>toggleActive(sk.id)} style={{ background:sk.active?"#FEF0EB":"#E8F8F1", border:"none", borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:sk.active?CORAL:GREEN, fontWeight:600 }}>{sk.active?"Désactiver":"Activer"}</button>
+                  <button onClick={()=>removeSkipper(sk)} title="Supprimer ce skipper" style={{ background:"#FEF0EB", border:`1px solid ${CORAL}40`, borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:12, color:CORAL, fontWeight:600 }}>🗑</button>
                 </Row>
               </Row>
             )}
@@ -3367,7 +3426,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
         <div style={{ background:"#fff", borderRadius:12, border:"1px solid #deeaf0", overflow:"hidden" }}>
           <div style={{ padding:"10px 16px", borderBottom:"1px solid #f0f5f7", fontWeight:700, color:TEAL, fontSize:13 }}>Par skipper encaisseur</div>
           {Object.entries(bySkipper).map(([skId,stats])=>{
-            const sk=skippers.find(s=>s.id===skId);
+            const sk=connus.find(s=>s.id===skId);
             return (
               <Row key={skId} style={{ padding:"10px 16px", borderBottom:"1px solid #f5f8fa", gap:10 }}>
                 <div style={{ width:30,height:30,borderRadius:15,background:sk?.color||"#999",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:13,flexShrink:0 }}>{(sk?.name||"?")[0]}</div>
