@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.28-d";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.28-f";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const P_AD      = 115;
 const P_CH      = 95;
@@ -2295,6 +2295,37 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const [adminStep, setAdminStep] = useState("day"); // "day" | "add-form" | "edit-form"
   const [addBoat,   setAddBoat]   = useState(null);  // boat selected for add
   const [viewMode,  setViewMode]  = useState("week"); // "month" | "week"
+  const [payBk,     setPayBk]     = useState(null);   // réservation dont on corrige l'encaissement
+  const [payDraft,  setPayDraft]  = useState([]);
+
+  // Ouvre l'éditeur avec les montants déjà encaissés
+  const openPay = (bk) => {
+    setPayDraft(payLinesFrom(bk.paiements_solde));
+    setPayBk(bk.id);
+  };
+
+  // L'admin peut corriger un encaissement même après validation du skipper
+  const savePaiements = (entry, boatId, bk) => {
+    const total = payDraft.reduce((s, p) => s + (+p.montant || 0), 0);
+    const du    = Math.max(0, bk.price - (bk.acompte_amount || 0));
+    if (total > du) { notify(`Total supérieur au solde dû (${fmtEur(du)})`, false); return; }
+
+    const next = { ...data, dates: data.dates.map(d => d.id !== entry.id ? d : {
+      ...d, boats: d.boats.map(b => b.id !== boatId ? b : {
+        ...b, bookings: b.bookings.map(x => x.id !== bk.id ? x : {
+          ...x,
+          paiements_solde: payDraft.filter(p => (+p.montant || 0) > 0)
+                                   .map(p => ({ methode: p.methode, montant: +p.montant })),
+          solde_encaisse:  total,
+          solde_date:      total > 0 ? (x.solde_date || new Date().toISOString()) : null,
+          solde_modifie_le: new Date().toISOString(),
+        })
+      })
+    })};
+    save(next);
+    setPayBk(null);
+    notify(total > 0 ? "Encaissement corrigé ✓" : "Encaissement remis à zéro ✓");
+  };
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date(); d.setHours(0,0,0,0); return d; // Start from today
   });
@@ -2634,10 +2665,31 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                         <span style={{ fontSize:12, color:"#888" }}>{fmtEur(bk.acompte_amount)}</span>
                       </div>
                     )}
+                    {bk.solde_encaisse > 0 && (
+                      <div style={{ display:"flex", justifyContent:"space-between" }}>
+                        <span style={{ fontSize:12, color:"#888" }}>Solde encaissé</span>
+                        <span style={{ fontSize:12, color:"#888" }}>{fmtEur(bk.solde_encaisse)}</span>
+                      </div>
+                    )}
                     {(bk.acompte_amount > 0 || bk.solde_encaisse > 0) && (
                       <div style={{ display:"flex", justifyContent:"space-between", borderTop:"1px solid #deeaf0", paddingTop:4, marginTop:2 }}>
                         <span style={{ fontSize:12, fontWeight:700, color:reste===0?GREEN:CORAL }}>Reste à payer</span>
                         <span style={{ fontSize:13, fontWeight:800, color:reste===0?GREEN:CORAL }}>{reste===0?"✅ Soldé":fmtEur(reste)}</span>
+                      </div>
+                    )}
+                    {/* Détail de l'encaissement, avec son auteur */}
+                    {bk.paiements_solde?.length > 0 && (
+                      <div style={{ borderTop:"1px solid #deeaf0", paddingTop:6, marginTop:2 }}>
+                        <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginBottom:4 }}>
+                          {bk.paiements_solde.map((p,i) => {
+                            const m = PAY_METHODS.find(x => x.id === p.methode);
+                            return <span key={i} style={{ fontSize:10, fontWeight:700, background:m?.color||"#999", color:"#fff", padding:"2px 8px", borderRadius:6 }}>{m?.icon} {m?.label} {fmtEur(p.montant)}</span>;
+                          })}
+                        </div>
+                        <div style={{ fontSize:10.5, color:"#aaa" }}>
+                          Encaissé par {bk.skipper_encaisseur || "—"}
+                          {bk.solde_modifie_le && " · corrigé par l'administrateur"}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2669,9 +2721,43 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                 <div style={{ display:"flex", gap:8 }}>
                   <button onClick={() => { setEditing({ dateId:entry.id, boatId:bk.boat.id, bkId:bk.id, form:{...bk} }); setAdminStep("edit-form"); }}
                     style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
+                  <button onClick={() => { setPayBk(payBk === bk.id ? null : bk.id); if (payBk !== bk.id) openPay(bk); }}
+                    style={{ background:"#FFF8EE", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:ORANGE, fontWeight:600 }}>💳 Encaissement</button>
                   <button onClick={() => setDelBk(bk.id)}
                     style={{ background:"#FEF0EB", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:CORAL, fontWeight:600 }}>🗑 Supprimer</button>
                 </div>
+
+                {/* Correction de l'encaissement — possible même après validation du skipper */}
+                {payBk === bk.id && (
+                  <div style={{ background:"#FFF8EE", borderRadius:10, padding:14, marginTop:10, border:`1px solid ${ORANGE}35` }}>
+                    <div style={{ fontWeight:700, color:ORANGE, fontSize:12.5, marginBottom:4 }}>
+                      Encaissement du solde — {bk.name}
+                    </div>
+                    <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>
+                      Solde dû : {fmtEur(Math.max(0, bk.price - (bk.acompte_amount||0)))}
+                      {bk.skipper_encaisseur && ` · saisi par ${bk.skipper_encaisseur}`}
+                    </div>
+                    <PayLines lines={payDraft} onChange={setPayDraft} />
+                    {(() => {
+                      const t  = payDraft.reduce((s,p) => s + (+p.montant||0), 0);
+                      const du = Math.max(0, bk.price - (bk.acompte_amount||0));
+                      return (
+                        <div style={{ fontSize:12, color:"#888", marginBottom:10 }}>
+                          Total saisi : <strong style={{ color: t > du ? CORAL : t === du ? GREEN : DARK }}>{fmtEur(t)}</strong> / {fmtEur(du)}
+                          {t > du && <span style={{ color:CORAL }}> — dépasse le solde dû</span>}
+                        </div>
+                      );
+                    })()}
+                    <Row gap={8} style={{ flexWrap:"wrap" }}>
+                      <Btn small variant="success" onClick={() => savePaiements(entry, bk.boat.id, bk)}>✓ Enregistrer</Btn>
+                      <Btn small variant="ghost" onClick={() => setPayBk(null)}>Annuler</Btn>
+                      <button onClick={() => setPayDraft(blankPayLines(0))}
+                        style={{ background:"none", border:"none", color:"#999", cursor:"pointer", fontSize:11.5, textDecoration:"underline" }}>
+                        tout remettre à zéro
+                      </button>
+                    </Row>
+                  </div>
+                )}
 
                 {delBk === bk.id && (
                   <div style={{ marginTop:10, background:"#FEF8F6", borderRadius:8, padding:"10px 14px" }}>
@@ -3339,6 +3425,82 @@ const PAY_METHODS = [
   { id:"ancv", label:"Chèque Vac.", icon:"🎫", color:"#009B77" },
 ];
 
+// ── Saisie des encaissements, une ligne par règlement ──────────
+// Un client peut régler avec plusieurs cartes, plusieurs remises
+// d'espèces ou plusieurs chèques vacances : chaque règlement a sa
+// propre ligne, et le total se calcule sur l'ensemble.
+function blankPayLines(prefillCb = 0) {
+  return PAY_METHODS.map(m => ({ id: uid(), methode: m.id, montant: m.id === "cb" ? prefillCb : 0 }));
+}
+
+// Reconstitue les lignes à partir d'un encaissement déjà enregistré
+function payLinesFrom(paiements) {
+  const out = [];
+  for (const m of PAY_METHODS) {
+    const found = (paiements || []).filter(p => p.methode === m.id);
+    if (found.length) found.forEach(p => out.push({ id: uid(), methode: m.id, montant: p.montant }));
+    else out.push({ id: uid(), methode: m.id, montant: 0 });
+  }
+  return out;
+}
+
+function PayLines({ lines, onChange, compact }) {
+  const fs = compact ? 10 : 11;
+  const set = (id, v)  => onChange(lines.map(p => p.id === id ? { ...p, montant: v } : p));
+  const del = (id)     => onChange(lines.filter(p => p.id !== id));
+  const add = (methode) => {
+    const idx = lines.map(p => p.methode).lastIndexOf(methode);
+    const next = [...lines];
+    next.splice(idx + 1, 0, { id: uid(), methode, montant: 0 });
+    onChange(next);
+  };
+
+  return (
+    <div>
+      {PAY_METHODS.map(m => {
+        const mine = lines.filter(p => p.methode === m.id);
+        const sum  = mine.reduce((s, p) => s + (+p.montant || 0), 0);
+        return (
+          <div key={m.id} style={{ marginBottom: 9 }}>
+            {mine.map((p, i) => (
+              <Row key={p.id} gap={7} style={{ marginBottom: 5, alignItems: "center" }}>
+                <span style={{ background: i === 0 ? m.color : "transparent", color: i === 0 ? "#fff" : "#bbb",
+                               fontSize: fs, padding: "3px 9px", borderRadius: 8, fontWeight: 700,
+                               minWidth: compact ? 70 : 78, textAlign: "center", flexShrink: 0,
+                               border: i === 0 ? "none" : `1px dashed ${m.color}40` }}>
+                  {i === 0 ? `${m.icon} ${m.label}` : `+${i + 1}`}
+                </span>
+                <input type="number" onFocus={e => e.target.select()} min="0"
+                  value={p.montant || ""}
+                  onChange={e => set(p.id, Math.max(0, +e.target.value))}
+                  style={{ ...inputStyle, flex: 1 }} placeholder="0" />
+                <span style={{ fontSize: fs + 1, color: "#888" }}>€</span>
+                {mine.length > 1 ? (
+                  <button onClick={() => del(p.id)} title="Retirer ce règlement"
+                    style={{ background: "#FEF0EB", border: "none", borderRadius: 6, width: 26, height: 26,
+                             cursor: "pointer", color: CORAL, fontWeight: 700, flexShrink: 0 }}>✕</button>
+                ) : <span style={{ width: 26, flexShrink: 0 }} />}
+              </Row>
+            ))}
+            <Row gap={8} style={{ paddingLeft: compact ? 76 : 84 }}>
+              <button onClick={() => add(m.id)}
+                style={{ background: "transparent", border: `1px dashed ${m.color}60`, borderRadius: 6,
+                         padding: "3px 10px", cursor: "pointer", color: m.color, fontSize: fs, fontWeight: 700 }}>
+                + {m.label}
+              </button>
+              {mine.length > 1 && (
+                <span style={{ fontSize: fs, color: "#888", alignSelf: "center" }}>
+                  {mine.length} règlements · {fmtEur(sum)}
+                </span>
+              )}
+            </Row>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) {
   const today = new Date();
   const [tab,     setTab]     = useState("today");   // today | planning | exchange
@@ -3552,7 +3714,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                         <Row gap={8} style={{ marginTop:6 }}>
                           <Btn small onClick={() => {
                             setSelBkPay(bk);
-                            setPayFormAll([{methode:"cb",montant:reste},{methode:"cash",montant:0},{methode:"ancv",montant:0}]);
+                            setPayFormAll(blankPayLines(reste));
                           }}>💳 Encaisser</Btn>
                           <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={boat.id} small />
                           {otherBoat && (
@@ -3577,15 +3739,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                       {isPaying && (
                         <div style={{ background:"#F0F8FB", borderRadius:10, padding:12, marginTop:10, border:`1px solid ${TEAL}30` }}>
                           <div style={{ fontWeight:700, color:TEAL, fontSize:12, marginBottom:10 }}>Encaissement — {bk.name} (reste : {fmtEur(reste)})</div>
-                          {PAY_METHODS.map(m=>(
-                            <Row key={m.id} gap={8} style={{ marginBottom:7, alignItems:"center" }}>
-                              <span style={{ background:m.color,color:"#fff",fontSize:10,padding:"2px 8px",borderRadius:7,fontWeight:700,minWidth:70,textAlign:"center" }}>{m.icon} {m.label}</span>
-                              <input type="number" onFocus={e => e.target.select()} min="0" value={payFormAll.find(p=>p.methode===m.id)?.montant || ""}
-                                onChange={e=>setPayFormAll(f=>f.map(p=>p.methode===m.id?{...p,montant:Math.max(0,+e.target.value)}:p))}
-                                style={{ ...inputStyle, flex:1 }} placeholder="0" />
-                              <span style={{ fontSize:11, color:"#888" }}>€</span>
-                            </Row>
-                          ))}
+                          <PayLines lines={payFormAll} onChange={setPayFormAll} compact />
                           <div style={{ fontSize:11, color:"#888", marginBottom:10 }}>
                             Total : <strong style={{ color:payFormAll.reduce((s,p)=>s+p.montant,0)===reste?GREEN:CORAL }}>{fmtEur(payFormAll.reduce((s,p)=>s+p.montant,0))}</strong> / {fmtEur(reste)}
                           </div>
@@ -3759,7 +3913,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                         <Row gap={8} style={{ marginTop:6 }}>
                           <Btn small onClick={() => {
                             setSelBk(bk);
-                            setPayForm([{ methode:"cb", montant: reste }, { methode:"cash", montant:0 }, { methode:"ancv", montant:0 }]);
+                            setPayForm(blankPayLines(reste));
                           }}>
                             💳 Encaisser le solde
                           </Btn>
@@ -3779,15 +3933,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           <div style={{ fontWeight:700, color:TEAL, fontSize:13, marginBottom:12 }}>
                             Encaissement solde — {bk.name} (reste : {fmtEur(reste)})
                           </div>
-                          {PAY_METHODS.map(m => (
-                            <Row key={m.id} gap={8} style={{ marginBottom:8, alignItems:"center", flexWrap:"nowrap" }}>
-                              <span style={{ background:m.color, color:"#fff", fontSize:11, padding:"3px 10px", borderRadius:8, fontWeight:700, minWidth:80, textAlign:"center" }}>{m.icon} {m.label}</span>
-                              <input type="number" onFocus={e => e.target.select()} min="0" value={payForm.find(p=>p.methode===m.id)?.montant || ""}
-                                onChange={e => setPayForm(f => f.map(p => p.methode===m.id ? {...p, montant:Math.max(0,+e.target.value)} : p))}
-                                style={{ ...inputStyle, width:100, flex:1 }} placeholder="0" />
-                              <span style={{ fontSize:12, color:"#888" }}>€</span>
-                            </Row>
-                          ))}
+                          <PayLines lines={payForm} onChange={setPayForm} />
                           <div style={{ fontSize:12, color:"#888", marginBottom:12 }}>
                             Total saisi : <strong style={{ color: payForm.reduce((s,p)=>s+p.montant,0) === reste ? GREEN : CORAL }}>{fmtEur(payForm.reduce((s,p)=>s+p.montant,0))}</strong>
                             {" "}/ {fmtEur(reste)}
