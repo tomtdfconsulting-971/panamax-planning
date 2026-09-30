@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.30-j";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.30-k";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 
 // ── Flotte ─────────────────────────────────────────────────────
@@ -2432,7 +2432,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <Row style={{ flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontWeight: 800, color: TEAL }}>📅 {entry?.label}</span>
             <span style={{ color: "#ccc" }}>·</span>
-            <span style={{ fontWeight: 700, color: DARK }}>{boatIcon} {boatName}</span>
+            <span style={{ fontWeight: 700, color: DARK }}>{bIcon} {boatName}</span>
             <span style={{ marginLeft: "auto", fontWeight: 700, color: GREEN, fontSize: 12, background: "#E8F8F1", padding: "3px 10px", borderRadius: 8 }}>{spots(addBoat)} place(s)</span>
           </Row>
         </div>
@@ -2519,7 +2519,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           <Row style={{ flexWrap: "wrap", gap: 8 }}>
             <span style={{ fontWeight: 800, color: TEAL }}>📅 {entry?.label}</span>
             <span style={{ color: "#ccc" }}>·</span>
-            <span style={{ fontWeight: 700, color: DARK }}>{boatIcon} {boatName}</span>
+            <span style={{ fontWeight: 700, color: DARK }}>{bIcon} {boatName}</span>
           </Row>
         </div>
         <h3 style={{ margin: "0 0 20px", color: DARK }}>✏️ Modifier la réservation</h3>
@@ -2690,7 +2690,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   <span style={{ background:srcColor, color:"#fff", fontSize:11, padding:"3px 10px", borderRadius:10, fontWeight:700, flexShrink:0 }}>
                     {isWoo ? "🌐 Web" : srcLabel}
                   </span>
-                  <span style={{ fontSize:12, color:"#aaa", flexShrink:0 }}>{boatIcon} {boatName}</span>
+                  <span style={{ fontSize:12, color:"#aaa", flexShrink:0 }}>{boatIcon(bk.boat.name)} {boatName}</span>
                   <span style={{ fontWeight:800, color:DARK, fontSize:15, flex:1 }}>{bk.name}</span>
                 </div>
 
@@ -4125,8 +4125,9 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                 borderRadius:8, padding:"4px 3px", minHeight:56, display:"flex", flexDirection:"column", alignItems:"center", gap:2
               }}>
                 <span style={{ fontSize:11, fontWeight:isToday?800:500, color:isToday?"#fff":isMine?skipperUser.color:DARK }}>{cell.getDate()}</span>
-                {aloesSk && <div style={{ fontSize:7, background:aloesSk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🛥 {aloesSk.name}</div>}
-                {panaSkk  && <div style={{ fontSize:7, background:panaSkk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🚤 {panaSkk.name}</div>}
+                {affectes.map(({ b, sk }) => (
+                  <div key={b.key} style={{ fontSize:7, background:sk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{b.icon} {sk.name}</div>
+                ))}
                 {(() => { const d = data.dates.find(x=>x.label===label); if(!d) return null; return d.boats.filter(b=>b.closed).map(b=><div key={b.id} style={{ fontSize:7, background:"#ddd", color:"#888", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{boatIcon(b.name)} Off</div>); })()}
               </div>
             );
