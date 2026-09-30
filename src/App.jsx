@@ -1,8 +1,14 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.30-l";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.30-m";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
+const uid      = () => Math.random().toString(36).slice(2, 9);
+const PAY_METHODS = [
+  { id:"cb",   label:"CB",          icon:"💳", color:"#2471A3" },
+  { id:"cash", label:"Cash",        icon:"💵", color:"#1E8449" },
+  { id:"ancv", label:"Chèque Vac.", icon:"🎫", color:"#009B77" },
+];
 
 // ── Flotte ─────────────────────────────────────────────────────
 // Un seul endroit décrit les bateaux : ajouter une entrée ici suffit à
@@ -91,7 +97,6 @@ function phoneOk(form) {
 }
 
 // ── Utils ──────────────────────────────────────────────────────
-const uid      = () => Math.random().toString(36).slice(2, 9);
 
 // ── Générer un lien de paiement Stripe ────────────────────────
 async function generateStripeLink({ amount, clientName, clientEmail, dateLabel, bookingId, dateId, boatId }) {
@@ -2673,7 +2678,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
           {allBookings.map((bk, idx) => {
             const isEd = editing?.boatId === bk.boat.id && editing?.bkId === bk.id;
-            const boatIcon = bk.boatIcon(boat.name);
+            const bIcon    = boatIcon(bk.boat.name);
             const boatName = boatDisplay(bk.boat.name);
             const srcColor = SOURCES[bk.source]?.color || "#999";
             const srcLabel = SOURCES[bk.source]?.label || "?";
@@ -2945,7 +2950,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                               return(
                                 <div key={bk.id} style={{ padding:"10px 12px", borderTop:i>0?`1px solid ${srcColor}15`:"none" }}>
                                   <div style={{ fontWeight:700, color:DARK, fontSize:13, marginBottom:5 }}>
-                                    {bk.boatIcon(boat.name)} {bk.name}
+                                    {boatIcon(bk.boat.name)} {bk.name}
                                   </div>
                                   <div style={{ fontSize:12, color:"#555", marginBottom:3 }}>
                                     👥 {bk.children?`${bk.adults}+${bk.children} pax`:`${bk.adults} pax`}
@@ -3532,11 +3537,6 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
 // ════════════════════════════════════════════════════════════════
 // SKIPPER VIEW
 // ════════════════════════════════════════════════════════════════
-const PAY_METHODS = [
-  { id:"cb",   label:"CB",          icon:"💳", color:"#2471A3" },
-  { id:"cash", label:"Cash",        icon:"💵", color:"#1E8449" },
-  { id:"ancv", label:"Chèque Vac.", icon:"🎫", color:"#009B77" },
-];
 
 // ── Saisie des encaissements, une ligne par règlement ──────────
 // Un client peut régler avec plusieurs cartes, plusieurs remises
@@ -3939,15 +3939,15 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           <div style={{ fontWeight:700, color:TEAL, fontSize:14, marginBottom:12 }}>⚓ Affectation des skippers</div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10 }}>
             {todayEntry.boats.map(boat => {
-              const boatKey   = boatKey(boat.name);
-              const assigned  = planning[boatKey];
+              const bKey      = boatKey(boat.name);
+              const assigned  = planning[bKey];
               const allSkip   = skData?.skippers || [];
               return (
                 <div key={boat.id} style={{ background:"#F0F8FB", borderRadius:10, padding:"12px 14px", border:`1px solid ${TEAL}20` }}>
                   <div style={{ fontSize:13, fontWeight:700, color:DARK, marginBottom:8 }}>
                     {`${boatIcon(boat.name)} ${boatDisplay(boat.name)}`}
                   </div>
-                  <select value={assigned||""} onChange={e => assignSkipper(todayLabel, boatKey, e.target.value)}
+                  <select value={assigned||""} onChange={e => assignSkipper(todayLabel, bKey, e.target.value)}
                     style={{ ...inputStyle, fontSize:13, fontWeight:600 }}>
                     <option value="">— Skipper —</option>
                     {allSkip.filter(s=>s.active).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
@@ -4646,7 +4646,7 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                 </div>
 
                 <div style={{ display:"flex", gap:7, flexWrap:"wrap" }}>
-                  <button onClick={()=>{ setEditUid(uid); setEditF({ name:u.name||"", role:u.role, refKey:u.refKey||"" }); setAdding(false); setPwdUid(null); }}
+                  <button onClick={()=>{ setEditUid(uid); setEditF({ name:u.name||"", role:u.role, refKey:u.refKey||"" }); setAdding(false); setMailUid(null); }}
                     style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"6px 12px", cursor:"pointer", fontSize:11.5, color:TEAL, fontWeight:600 }}>
                     ✏️ Modifier
                   </button>
