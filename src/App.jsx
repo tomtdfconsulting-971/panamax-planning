@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.30-m";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.30-n";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -1395,7 +1395,7 @@ function ResellerPortal({ data, save, session }) {
 // ════════════════════════════════════════════════════════════════
 // COMPTABILITÉ TAB
 // ════════════════════════════════════════════════════════════════
-function ComptaTab({ data, sources: srcMap }) {
+function ComptaTab({ data, sources: srcMap, skData }) {
   const today = new Date();
   const fmt = (d) => d.toISOString().slice(0,10);
   const [dateFrom, setDateFrom] = useState(fmt(new Date(today.getFullYear(), today.getMonth(), 1)));
@@ -1418,10 +1418,14 @@ function ComptaTab({ data, sources: srcMap }) {
     if (!d || d < from || d > to) continue;
 
     const dayKey = date.label;
-    if (!workDays[dayKey]) workDays[dayKey] = { label: dayKey, date: d, actifs: {}, pax: 0, rev: 0, bkCount: 0 };
+    if (!workDays[dayKey]) workDays[dayKey] = { label: dayKey, date: d, actifs: {}, paxParBateau: {}, pax: 0, rev: 0, bkCount: 0 };
 
     for (const boat of date.boats) {
-      if (boat.bookings.length > 0) workDays[dayKey].actifs[boatKey(boat.name)] = true;
+      const paxBateau = boat.bookings.reduce((s, bk) => s + bk.adults + bk.children, 0);
+      if (paxBateau > 0) {
+        workDays[dayKey].actifs[boatKey(boat.name)] = true;
+        workDays[dayKey].paxParBateau[boatKey(boat.name)] = paxBateau;
+      }
       for (const bk of boat.bookings) {
         workDays[dayKey].pax += bk.adults + bk.children;
         workDays[dayKey].rev += bk.price;
@@ -1468,6 +1472,39 @@ function ComptaTab({ data, sources: srcMap }) {
     byBoat[bn].rev += bk.price;
   }
 
+  // ── Jours travaillés par skipper ──────────────────────────
+  // Une journée n'est comptée que si le bateau a réellement embarqué :
+  // une affectation au planning sans passager n'est pas une sortie en mer.
+  const MOIS_LONGS = ["janvier","février","mars","avril","mai","juin",
+                      "juillet","août","septembre","octobre","novembre","décembre"];
+  const planningSk = skData?.planning || {};
+  const tousSk     = [...(skData?.skippers || []), ...(skData?.archived || [])];
+
+  const joursParSkipper = {};   // { idSkipper: { total, parMois: { "2026-09": {label, jours, pax} } } }
+  for (const d of workDaysList) {
+    const affect = planningSk[d.label];
+    if (!affect) continue;
+    const moisCle = `${d.date.getFullYear()}-${String(d.date.getMonth()).padStart(2,"0")}`;
+    const moisLbl = `${MOIS_LONGS[d.date.getMonth()]} ${d.date.getFullYear()}`;
+    for (const b of BOATS) {
+      const skId = affect[b.key];
+      if (!skId) continue;
+      if (!d.actifs?.[b.key]) continue;              // bateau resté à quai
+      if (!joursParSkipper[skId]) joursParSkipper[skId] = { total: 0, pax: 0, parMois: {}, datesVues: new Set() };
+      const s = joursParSkipper[skId];
+      const cleJour = d.label;
+      if (!s.parMois[moisCle]) s.parMois[moisCle] = { label: moisLbl, jours: 0, pax: 0, datesVues: new Set() };
+      const m = s.parMois[moisCle];
+      // Un skipper affecté à deux bateaux le même jour ne travaille qu'une journée
+      if (!s.datesVues.has(cleJour)) { s.datesVues.add(cleJour); s.total++; }
+      if (!m.datesVues.has(cleJour)) { m.datesVues.add(cleJour); m.jours++; }
+      s.pax += d.paxParBateau?.[b.key] || 0;
+      m.pax += d.paxParBateau?.[b.key] || 0;
+    }
+  }
+  const skippersTries = Object.entries(joursParSkipper)
+    .sort((a, b) => b[1].total - a[1].total);
+
   // CSV export
   const exportCSV = (rows, headers, filename) => {
     const csv = [headers, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
@@ -1501,6 +1538,18 @@ function ComptaTab({ data, sources: srcMap }) {
     const headers = ["Date", ...BOATS.map(b => b.display), "Réservations", "Passagers", "CA (€)"];
     const rows = workDaysList.map(d => [d.label, ...BOATS.map(b => d.actifs?.[b.key] ? "✓" : ""), d.bkCount, d.pax, d.rev]);
     exportCSV(rows, headers, `panamax-synthese-${dateFrom}-${dateTo}.csv`);
+  };
+
+  const exportJoursSkippers = () => {
+    const headers = ["Skipper","Mois","Jours travaillés","Passagers embarqués"];
+    const rows = [];
+    for (const [skId, s] of skippersTries) {
+      const sk = tousSk.find(x => x.id === skId);
+      for (const [, m] of Object.entries(s.parMois).sort((a,b) => a[0].localeCompare(b[0]))) {
+        rows.push([sk?.name || skId, m.label, m.jours, m.pax]);
+      }
+    }
+    exportCSV(rows, headers, `panamax-jours-skippers-${dateFrom}-${dateTo}.csv`);
   };
 
   const exportSkippers = () => {
@@ -1643,6 +1692,50 @@ function ComptaTab({ data, sources: srcMap }) {
           ))}
         </div>
 
+        <Section title="👤 Jours travaillés par skipper">
+          <div style={{ fontSize:11, color:"#888", marginBottom:12, lineHeight:1.5 }}>
+            Seules les journées où le bateau a réellement embarqué sont comptées.
+            Une affectation au planning sans passager n'est pas une sortie.
+          </div>
+          {skippersTries.length === 0 && (
+            <div style={{ color:"#bbb", fontSize:13, textAlign:"center", padding:12 }}>
+              Aucune sortie attribuée à un skipper sur cette période.
+            </div>
+          )}
+          {skippersTries.map(([skId, s]) => {
+            const sk = tousSk.find(x => x.id === skId);
+            const mois = Object.entries(s.parMois).sort((a,b) => a[0].localeCompare(b[0]));
+            return (
+              <div key={skId} style={{ borderBottom:"1px solid #f0f5f7", padding:"11px 0" }}>
+                <Row style={{ gap:10, marginBottom: mois.length > 1 ? 8 : 0 }}>
+                  <div style={{ width:30, height:30, borderRadius:15, background:sk?.color || "#999",
+                                display:"flex", alignItems:"center", justifyContent:"center",
+                                color:"#fff", fontWeight:700, fontSize:13, flexShrink:0 }}>
+                    {(sk?.name || "?")[0]}
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{sk?.name || skId}</div>
+                    <div style={{ fontSize:11, color:"#888" }}>{s.pax} passager(s) embarqué(s)</div>
+                  </div>
+                  <span style={{ fontWeight:800, color:TEAL, fontSize:15, flexShrink:0 }}>
+                    {s.total} jour{s.total > 1 ? "s" : ""}
+                  </span>
+                </Row>
+                {mois.length > 1 && (
+                  <div style={{ display:"flex", gap:6, flexWrap:"wrap", paddingLeft:40 }}>
+                    {mois.map(([cle, m]) => (
+                      <span key={cle} style={{ background:"#F0F8FB", color:TEAL, fontSize:11,
+                                               padding:"3px 9px", borderRadius:7, border:`1px solid ${TEAL}20` }}>
+                        {m.label} : <strong>{m.jours}j</strong>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </Section>
+
         <Section title="⚓ Calendrier des sorties">
           {workDaysList.length===0&&<div style={{color:"#bbb",fontSize:13,textAlign:"center",padding:12}}>Aucune sortie sur cette période.</div>}
           {workDaysList.map((d,i)=>(
@@ -1661,7 +1754,10 @@ function ComptaTab({ data, sources: srcMap }) {
           ))}
         </Section>
 
-        <Btn variant="success" onClick={exportSkippers} disabled={workDaysList.length===0}>⬇️ Export skippers CSV</Btn>
+        <Row gap={8} style={{ flexWrap:"wrap" }}>
+          <Btn variant="success" onClick={exportSkippers} disabled={workDaysList.length===0}>⬇️ Sorties CSV</Btn>
+          <Btn variant="success" onClick={exportJoursSkippers} disabled={skippersTries.length===0}>⬇️ Jours par skipper CSV</Btn>
+        </Row>
       </>)}
     </div>
   );
@@ -1889,8 +1985,10 @@ function StatsTab({ data, sources: srcMap }) {
   const totalPax  = filtered.reduce((s, bk) => s + bk.adults + bk.children, 0);
   const totalRev  = filtered.reduce((s, bk) => s + bk.price, 0);
   const totalBk   = filtered.length;
-  const acompteOui = filtered.filter(bk => bk.acompte === "oui").length;
-  const acompteNon = filtered.filter(bk => bk.acompte === "non").length;
+  // L'acompte est un montant, pas un indicateur : l'ancien test « acompte === "oui" »
+  // ne correspondait plus au modèle et renvoyait toujours zéro.
+  const acompteOui   = filtered.filter(bk => (bk.acompte_amount || 0) > 0).length;
+  const acompteTotal = filtered.reduce((s, bk) => s + (bk.acompte_amount || 0), 0);
 
   // Stats by source
   const bySource = {};
@@ -1979,7 +2077,7 @@ function StatsTab({ data, sources: srcMap }) {
           { v: totalBk,          l: "Réservations",    i: "📋", c: TEAL  },
           { v: totalPax,         l: "Passagers",        i: "👥", c: TEAL  },
           { v: fmtEur(totalRev), l: "Chiffre d'aff.",   i: "💰", c: CORAL },
-          { v: `${acompteOui}/${totalBk}`, l: "Acomptes encaissés", i: "✅", c: GREEN },
+          { v: fmtEur(acompteTotal), l: `Acomptes encaissés (${acompteOui}/${totalBk})`, i: "✅", c: GREEN },
         ].map(({ v, l, i, c }) => (
           <div key={l} style={{ background: "#fff", borderRadius: 12, padding: "14px 16px", border: "1px solid #e0eef3", textAlign: "center" }}>
             <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>{i} {l}</div>
@@ -3181,7 +3279,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
         {/* ── Comptabilité tab ── */}
         {tab === "stats"  && <StatsTab data={data} sources={sources} />}
 
-        {tab === "compta" && <ComptaTab data={data} sources={sources} />}
+        {tab === "compta" && <ComptaTab data={data} sources={sources} skData={skData} />}
 
         {/* ── Skippers management tab ── */}
         {tab === "skippers_mgmt" && <SkippersMgmtTab skData={skData} saveSkData={saveSkData} data={data} />}
@@ -4137,7 +4235,77 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           })}
         </div>
 
-        <div style={{ marginTop:16, background:"#F0F8FB", borderRadius:12, padding:"12px 16px", border:`1px solid ${TEAL}20` }}>
+        {/* ── Ordre de priorité des bateaux ── */}
+        <div style={{ marginTop:14, background:"#F8FBFC", borderRadius:12, padding:"11px 14px", border:"1px solid #e0eef3" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"#888", textTransform:"uppercase", letterSpacing:0.6, marginBottom:8 }}>
+            Ordre de priorité
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {BOATS.map((b, i) => (
+              <Row key={b.key} gap={8} style={{ alignItems:"center" }}>
+                <span style={{ width:20, height:20, borderRadius:10, background:TEAL, color:"#fff",
+                               fontSize:11, fontWeight:800, display:"flex", alignItems:"center",
+                               justifyContent:"center", flexShrink:0 }}>{i + 1}</span>
+                <span style={{ fontSize:12.5, color:DARK }}>{b.icon} {b.display}</span>
+                <span style={{ fontSize:11, color:"#aaa", marginLeft:"auto" }}>Priorité {i + 1}</span>
+              </Row>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Jours travaillés, mis à jour chaque jour ── */}
+        {(() => {
+          const moisNoms = ["janvier","février","mars","avril","mai","juin",
+                            "juillet","août","septembre","octobre","novembre","décembre"];
+          const finJour = new Date(); finJour.setHours(23, 59, 59, 999);
+          let joursMois = 0, joursAnnee = 0, paxMois = 0;
+          const vusMois = new Set(), vusAnnee = new Set();
+
+          for (const [label, affect] of Object.entries(skData?.planning || {})) {
+            const d = dateFromLabel(label);
+            if (!d || d > finJour) continue;                       // sorties à venir non comptées
+            const jour = data.dates.find(x => x.label === label);
+            if (!jour) continue;
+            for (const b of BOATS) {
+              if (affect?.[b.key] !== skipperUser.id) continue;
+              const bateau = jour.boats.find(x => x.name === b.name);
+              const pax = bateau ? boatPax(bateau) : 0;
+              if (pax === 0) continue;                              // resté à quai
+              if (d.getFullYear() === curYear) {
+                if (!vusAnnee.has(label)) { vusAnnee.add(label); joursAnnee++; }
+                if (d.getMonth() === curMonth) {
+                  if (!vusMois.has(label)) { vusMois.add(label); joursMois++; }
+                  paxMois += pax;
+                }
+              }
+            }
+          }
+
+          return (
+            <div style={{ marginTop:14, background:`linear-gradient(135deg, ${DARK}, ${TEAL})`,
+                          borderRadius:12, padding:"14px 16px", color:"#fff" }}>
+              <div style={{ fontSize:11.5, color:"rgba(255,255,255,0.7)", marginBottom:6 }}>
+                ⚓ Mes sorties en {moisNoms[curMonth]} {curYear}
+              </div>
+              <Row style={{ alignItems:"baseline", gap:10, flexWrap:"wrap" }}>
+                <span style={{ fontSize:30, fontWeight:800 }}>{joursMois}</span>
+                <span style={{ fontSize:13, color:"rgba(255,255,255,0.8)" }}>
+                  jour{joursMois > 1 ? "s" : ""} en mer
+                </span>
+                {paxMois > 0 && (
+                  <span style={{ fontSize:12, color:"rgba(255,255,255,0.6)", marginLeft:"auto" }}>
+                    {paxMois} passager(s)
+                  </span>
+                )}
+              </Row>
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.55)", marginTop:6, lineHeight:1.5 }}>
+                {joursAnnee} jour(s) depuis janvier {curYear} · seules les sorties effectuées sont comptées
+              </div>
+            </div>
+          );
+        })()}
+
+        <div style={{ marginTop:14, background:"#F0F8FB", borderRadius:12, padding:"12px 16px", border:`1px solid ${TEAL}20` }}>
           <div style={{ fontWeight:700, color:TEAL, fontSize:13, marginBottom:8 }}>Mes prochaines sorties</div>
           {myPlanningDates.filter(label => {
             const d = dateFromLabel(label);
