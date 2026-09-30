@@ -4,6 +4,13 @@ import { getServiceToken } from './_firebase.js';
 import crypto from 'crypto';
 
 const STORE_KEY        = 'panamax-v3';
+
+// Flotte — doit rester aligné avec BOATS dans src/App.jsx
+const BOATS = [
+  { key: 'aloes',   name: 'Aloes Vera', emoji: 'ferry' },
+  { key: 'panamax', name: 'Panamax',    emoji: 'boat'  },
+  { key: 'zod',     name: 'Zod',        emoji: 'ship'  },
+];
 const FIREBASE_PROJECT = process.env.FIREBASE_PROJECT_ID || 'panamax-planning';
 const FIREBASE_API_KEY = process.env.FIREBASE_WEB_API_KEY; // clé web publique Firebase
 
@@ -190,8 +197,7 @@ export default async function handler(req, res) {
         dateEntry = {
           id: uid(), label: dateLabel,
           boats: [
-            { id: uid(), name: 'Aloes Vera', emoji: 'ferry',  bookings: [] },
-            { id: uid(), name: 'Panamax',    emoji: 'boat',   bookings: [] },
+            ...BOATS.map(b => ({ id: uid(), name: b.name, emoji: b.emoji, bookings: [] })),
           ],
         };
         current.dates.push(dateEntry);
