@@ -1,8 +1,26 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.29-i";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.30-j";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
+
+// ── Flotte ─────────────────────────────────────────────────────
+// Un seul endroit décrit les bateaux : ajouter une entrée ici suffit à
+// les faire apparaître dans les plannings, formulaires, exports et
+// affectations de skippers.
+const BOATS = [
+  { key: "aloes",   name: "Aloes Vera", display: "Aloès Vera", short: "Aloès",   icon: "🛥️", emoji: "ferry" },
+  { key: "panamax", name: "Panamax",    display: "Panamax",    short: "Panamax", icon: "🚤", emoji: "boat"  },
+  { key: "zod",     name: "Zod",        display: "Le Zod",     short: "Zod",     icon: "⛴",  emoji: "ship"  },
+];
+const boatMeta = (name) => BOATS.find(b => b.name === name)
+  || { key: name, name, display: name, short: name, icon: "🚤", emoji: "boat" };
+const boatIcon    = (name) => boatMeta(name).icon;
+const boatDisplay = (name) => boatMeta(name).display;
+const boatShort   = (name) => boatMeta(name).short;
+const boatKey     = (name) => boatMeta(name).key;
+// Jeu de bateaux vierge pour une nouvelle date
+const freshBoats  = () => BOATS.map(b => ({ id: uid(), name: b.name, emoji: b.emoji, bookings: [] }));
 const P_AD      = 115;
 const P_CH      = 95;
 const STORE_KEY          = "panamax-v3";
@@ -254,6 +272,22 @@ function dateKeyOf(label) {
 // Fusionne les fiches qui désignent la même date réelle.
 // Aucune réservation n'est perdue : celles des doublons rejoignent la
 // première fiche, bateau par bateau.
+// Complète les dates existantes avec les bateaux ajoutés depuis leur création.
+// On ne touche pas aux dates passées : leur composition reste un historique.
+function ensureFleet(dates) {
+  const aujourdhui = new Date(); aujourdhui.setHours(0, 0, 0, 0);
+  let ajoutes = 0;
+  const out = dates.map(e => {
+    const d = dateFromLabel(e.label);
+    if (d && d < aujourdhui) return e;
+    const manquants = BOATS.filter(b => !e.boats.some(x => x.name === b.name));
+    if (!manquants.length) return e;
+    ajoutes += manquants.length;
+    return { ...e, boats: [...e.boats, ...manquants.map(b => ({ id: uid(), name: b.name, emoji: b.emoji, bookings: [] }))] };
+  });
+  return { dates: out, ajoutes };
+}
+
 function mergeDuplicateDates(dates) {
   const idxByKey = new Map();
   const out = [];
@@ -279,8 +313,7 @@ function makeDateEntry(label) {
   return {
     id: uid(), label,
     boats: [
-      { id: uid(), name: "Aloes Vera", emoji: "ferry", bookings: [] },
-      { id: uid(), name: "Panamax",    emoji: "boat",  bookings: [] },
+      ...freshBoats(),
     ],
   };
 }
@@ -313,9 +346,10 @@ function parseWA(text) {
       const label = line.replace(/[^\w\s/àâäéèêëîïôùûüç'-]/gi, "").trim();
       d = { id: uid(), label, boats: [] }; result.push(d); b = null; continue;
     }
-    if (d && (line.includes("🛥") || line.includes("🚤"))) {
-      const isA = /alo[eè]s/i.test(line);
-      b = { id: uid(), name: isA ? "Aloes Vera" : "Panamax", emoji: isA ? "ferry" : "boat", bookings: [] };
+    if (d && BOATS.some(x => line.includes(x.icon) || new RegExp(x.short, "i").test(line))) {
+      const m = BOATS.find(x => new RegExp(x.short, "i").test(line))
+             || BOATS.find(x => line.includes(x.icon)) || BOATS[1];
+      b = { id: uid(), name: m.name, emoji: m.emoji, bookings: [] };
       d.boats.push(b); continue;
     }
     if (b && /^\d/.test(line)) {
@@ -339,7 +373,7 @@ const DEFAULT_SKIPPERS_DATA = {
     { id: "ludo",   name: "Ludo",   email: "", color: "#2471A3", active: true },
     { id: "camille",name: "Camille",email: "", color: "#8E44AD", active: true },
   ],
-  planning: {}, // { "dateLabel": { "aloes": "ludo", "panamax": "camille" } }
+  planning: {}, // { "libellé de date": { "aloes": "ludo", "panamax": "camille", "zod": "…" } }
 };
 
 function useData() {
@@ -643,10 +677,7 @@ function ResellerPortal({ data, save, session }) {
       id: null,
       label: labelFromDate(cell),
       _virtual: true,
-      boats: [
-        { id: "v-aloes-" + key, name: "Aloes Vera", emoji: "ferry",  bookings: [] },
-        { id: "v-panamax-" + key, name: "Panamax",  emoji: "boat",   bookings: [] },
-      ],
+      boats: BOATS.map(b => ({ id: `v-${b.key}-${key}`, name: b.name, emoji: b.emoji, bookings: [] })),
     };
   };
 
@@ -722,7 +753,7 @@ function ResellerPortal({ data, save, session }) {
         <p style={{ color: "#666", lineHeight: 1.7, marginBottom: 24 }}>Votre réservation est confirmée. Un email de confirmation vous a été envoyé.</p>
         <div style={{ background: "#F0F8FB", borderRadius: 12, padding: 16, marginBottom: 24, textAlign: "left", fontSize: 14, lineHeight: 2, border: `1px solid ${TEAL}20` }}>
           <div>📅 <strong>{selDate?.label}</strong></div>
-          <div>{selBoat?.name === "Aloes Vera" ? "🛥️" : "🚤"} <strong>{selBoat?.name === "Aloes Vera" ? "Aloès Vera" : "Panamax"}</strong></div>
+          <div>{boatIcon(selBoat?.name)} <strong>{boatDisplay(selBoat?.name)}</strong></div>
           <div>👥 {form.children ? `${form.adults} adulte(s) + ${form.children} enfant(s)` : `${form.adults} adulte(s)`}</div>
           <div>👤 {form.name}</div>
           {form.phone && <div>📞 {form.phone}</div>}
@@ -748,8 +779,8 @@ function ResellerPortal({ data, save, session }) {
             const p = pct(boat);
             const full = r <= 0;
             const bc = barColor(boat);
-            const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-            const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
+            const icon = boatIcon(boat.name);
+            const displayName = boatDisplay(boat.name);
             const unavailable = full || boat.closed;
             return (
               <button key={boat.id} onClick={() => { if (!unavailable) { setSelBoat(boat); setStep("form"); } }} disabled={unavailable}
@@ -788,8 +819,8 @@ function ResellerPortal({ data, save, session }) {
               </div>
               {selDate.boats.map(boat => {
                 if (boat.bookings.length === 0) return null;
-                const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-                const dname = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
+                const icon = boatIcon(boat.name);
+                const dname = boatDisplay(boat.name);
                 return (
                   <div key={boat.id} style={{ marginBottom: 18 }}>
                     {/* Boat header */}
@@ -846,8 +877,8 @@ function ResellerPortal({ data, save, session }) {
 
   // ── Booking form ───────────────────────────
   if (step === "form" && selDate && selBoat) {
-    const icon = selBoat.name === "Aloes Vera" ? "🛥️" : "🚤";
-    const displayName = selBoat.name === "Aloes Vera" ? "Aloès Vera" : selBoat.name;
+    const icon = boatIcon(selBoat.name);
+    const displayName = boatDisplay(selBoat.name);
     return (
       <div style={{ flex: 1, padding: "0 20px 40px", maxWidth: 520, margin: "0 auto", width: "100%", boxSizing: "border-box" }}>
         <button onClick={() => setStep("boat")} style={{ background: "rgba(255,255,255,0.15)", border: "none", color: "#fff", cursor: "pointer", borderRadius: 20, padding: "7px 18px", fontSize: 13, fontWeight: 600, marginBottom: 20 }}>
@@ -1026,8 +1057,8 @@ function ResellerPortal({ data, save, session }) {
               <Btn onClick={() => setStep("cal")} style={{ marginTop: 12 }}>Faire une réservation</Btn>
             </div>
           ) : pending.map(p => {
-            const icon = p.boatName === "Aloes Vera" ? "🛥️" : "🚤";
-            const bname = p.boatName === "Aloes Vera" ? "Aloès Vera" : p.boatName || "Bateau";
+            const icon = boatIcon(p.boatName);
+            const bname = boatDisplay(p.boatName || "Bateau");
             const isPendingDel = delPending === p.id;
             return (
               <div key={p.id} style={{ border: "1px solid #e0eef3", borderRadius: 14, padding: 16, marginBottom: 12 }}>
@@ -1079,8 +1110,8 @@ function ResellerPortal({ data, save, session }) {
   if (step === "edit-resa" && editingPending) {
     const dateEntry = data.dates.find(d => d.id === editingPending.dateId);
     const boat = dateEntry?.boats.find(b => b.id === editingPending.boatId);
-    const icon = boat?.name === "Aloes Vera" ? "🛥️" : "🚤";
-    const bname = boat?.name === "Aloes Vera" ? "Aloès Vera" : boat?.name || "Bateau";
+    const icon = boatIcon(boat?.name);
+    const bname = boatDisplay(boat?.name || "Bateau");
     const saveEdit = () => {
       // ── Double sécurité : capacité max 12 passagers ──
       const autres = (boat?.bookings || []).filter(bk => bk.id !== editingPending.id)
@@ -1240,8 +1271,8 @@ function ResellerPortal({ data, save, session }) {
                       return(
                         <div key={boat.id} style={{ background:"rgba(255,255,255,0.1)", borderRadius:8, padding:"7px 10px", boxSizing:"border-box", width:"100%", overflow:"hidden" }}>
                           <Row style={{ marginBottom:4 }}>
-                            <span style={{ fontSize:14 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</span>
-                            <span style={{ fontSize:13, fontWeight:700, color:"#fff", flex:1, marginLeft:6 }}>{boat.name==="Aloes Vera"?"Aloès Vera":"Panamax"}</span>
+                            <span style={{ fontSize:14 }}>{boatIcon(boat.name)}</span>
+                            <span style={{ fontSize:13, fontWeight:700, color:"#fff", flex:1, marginLeft:6 }}>{boatDisplay(boat.name)}</span>
                             <span style={{ fontSize:12, fontWeight:800, color:isPast?"rgba(255,255,255,0.35)":boat.closed?"rgba(255,255,255,0.4)":r<=0?"#fff":"#FA9F6A", background:!isPast&&!boat.closed&&r<=0?RED:"transparent", borderRadius:6, padding:!isPast&&!boat.closed&&r<=0?"2px 8px":0 }}>{boat.closed?"🚫 Off":r<=0?"COMPLET 💥":`Reste ${r} place${r>1?"s":""}`}</span>
                           </Row>
                           <div style={{ height:4, borderRadius:2, background:"rgba(255,255,255,0.15)", overflow:"hidden" }}>
@@ -1325,7 +1356,7 @@ function ResellerPortal({ data, save, session }) {
                   return (
                     <div key={boat.id} style={{ background: "rgba(255,255,255,0.13)", borderRadius: 4, padding: "2px 4px", overflow: "hidden", minWidth: 0 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 2, minWidth: 0 }}>
-                        <span style={{ fontSize: 9, lineHeight: 1, flexShrink: 0 }}>{boat.name === "Aloes Vera" ? "🛥️" : "🚤"}</span>
+                        <span style={{ fontSize: 9, lineHeight: 1, flexShrink: 0 }}>{boatIcon(boat.name)}</span>
                         <span style={{ fontSize: 8, fontWeight: 800, color: boat.closed ? "#bbb" : r <= 0 ? "#fff" : "#FA9F6A", background: r <= 0 && !boat.closed ? RED : "transparent", borderRadius: 3, padding: r <= 0 && !boat.closed ? "0 3px" : 0, flexShrink: 0, marginLeft: 1 }}>{boat.closed ? "Off" : r <= 0 ? "💥" : `R${r}`}</span>
                       </div>
                       <div style={{ height: 2, borderRadius: 2, background: "rgba(255,255,255,0.15)", overflow: "hidden" }}>
@@ -1379,14 +1410,10 @@ function ComptaTab({ data, sources: srcMap }) {
     if (!d || d < from || d > to) continue;
 
     const dayKey = date.label;
-    if (!workDays[dayKey]) workDays[dayKey] = { label: dayKey, date: d, aloes: false, panamax: false, pax: 0, rev: 0, bkCount: 0 };
+    if (!workDays[dayKey]) workDays[dayKey] = { label: dayKey, date: d, actifs: {}, pax: 0, rev: 0, bkCount: 0 };
 
     for (const boat of date.boats) {
-      const isAloes = boat.name === "Aloes Vera";
-      if (boat.bookings.length > 0) {
-        if (isAloes) workDays[dayKey].aloes = true;
-        else         workDays[dayKey].panamax = true;
-      }
+      if (boat.bookings.length > 0) workDays[dayKey].actifs[boatKey(boat.name)] = true;
       for (const bk of boat.bookings) {
         workDays[dayKey].pax += bk.adults + bk.children;
         workDays[dayKey].rev += bk.price;
@@ -1406,9 +1433,11 @@ function ComptaTab({ data, sources: srcMap }) {
   const totalReste    = allBk.reduce((s,b) => s + Math.max(0, b.price - (b.acompte_amount||0)), 0);
   const baseRev       = totalAdults * P_AD + totalChildren * P_CH;
   const workDaysList  = Object.values(workDays).sort((a,b) => a.date-b.date);
-  const daysAloes     = workDaysList.filter(d => d.aloes).length;
-  const daysPanamax   = workDaysList.filter(d => d.panamax).length;
-  const daysTotal     = workDaysList.filter(d => d.aloes || d.panamax).length;
+  // Nombre de jours travaillés, par bateau
+  const daysByBoat = Object.fromEntries(
+    BOATS.map(b => [b.key, workDaysList.filter(d => d.actifs?.[b.key]).length])
+  );
+  const daysTotal     = workDaysList.filter(d => BOATS.some(b => d.actifs?.[b.key])).length;
 
   // By source
   const bySource = {};
@@ -1422,9 +1451,11 @@ function ComptaTab({ data, sources: srcMap }) {
   }
 
   // By boat
-  const byBoat = { "Aloes Vera": {pax:0,rev:0,days:daysAloes}, "Panamax": {pax:0,rev:0,days:daysPanamax} };
+  const byBoat = Object.fromEntries(
+    BOATS.map(b => [b.name, { pax: 0, rev: 0, days: daysByBoat[b.key] || 0 }])
+  );
   for (const bk of allBk) {
-    const bn = bk.boatName === "Aloes Vera" ? "Aloes Vera" : "Panamax";
+    const bn = byBoat[bk.boatName] ? bk.boatName : BOATS[1].name;   // repli si bateau inconnu
     byBoat[bn].pax += bk.adults + bk.children;
     byBoat[bn].rev += bk.price;
   }
@@ -1442,7 +1473,7 @@ function ComptaTab({ data, sources: srcMap }) {
     const headers = ["Date","Bateau","Référent","Nom client","Adultes","Enfants","Tél","Email","Prix brut","Remise","Prix net","Acompte","Reste à payer","Notes"];
     const rows = allBk.map(bk => [
       bk.dateLabel,
-      bk.boatName === "Aloes Vera" ? "Aloès Vera" : "Panamax",
+      boatDisplay(bk.boatName),
       srcLabel(bk.source),
       bk.name,
       bk.adults, bk.children,
@@ -1459,14 +1490,14 @@ function ComptaTab({ data, sources: srcMap }) {
   };
 
   const exportSynthese = () => {
-    const headers = ["Date","Aloès Vera","Panamax","Réservations","Passagers","CA (€)"];
-    const rows = workDaysList.map(d => [d.label, d.aloes?"✓":"", d.panamax?"✓":"", d.bkCount, d.pax, d.rev]);
+    const headers = ["Date", ...BOATS.map(b => b.display), "Réservations", "Passagers", "CA (€)"];
+    const rows = workDaysList.map(d => [d.label, ...BOATS.map(b => d.actifs?.[b.key] ? "✓" : ""), d.bkCount, d.pax, d.rev]);
     exportCSV(rows, headers, `panamax-synthese-${dateFrom}-${dateTo}.csv`);
   };
 
   const exportSkippers = () => {
-    const headers = ["Date","Aloès Vera travaille","Panamax travaille","Passagers","CA (€)"];
-    const rows = workDaysList.map(d => [d.label, d.aloes?"OUI":"", d.panamax?"OUI":"", d.pax, d.rev]);
+    const headers = ["Date", ...BOATS.map(b => `${b.display} travaille`), "Passagers", "CA (€)"];
+    const rows = workDaysList.map(d => [d.label, ...BOATS.map(b => d.actifs?.[b.key] ? "OUI" : ""), d.pax, d.rev]);
     exportCSV(rows, headers, `panamax-skippers-${dateFrom}-${dateTo}.csv`);
   };
 
@@ -1542,8 +1573,8 @@ function ComptaTab({ data, sources: srcMap }) {
         <Section title="🚤 CA par bateau">
           {Object.entries(byBoat).map(([name,stats])=>(
             <Row key={name} style={{padding:"8px 0",borderBottom:"1px solid #f5f8fa",gap:10}}>
-              <span style={{fontSize:16}}>{name==="Aloes Vera"?"🛥️":"🚤"}</span>
-              <span style={{flex:1,fontWeight:700,color:DARK}}>{name==="Aloes Vera"?"Aloès Vera":name}</span>
+              <span style={{fontSize:16}}>{boatIcon(name)}</span>
+              <span style={{flex:1,fontWeight:700,color:DARK}}>{boatDisplay(name)}</span>
               <span style={{fontSize:12,color:"#888"}}>{stats.days} j. · {stats.pax} pax</span>
               <span style={{fontWeight:800,color:TEAL,fontSize:14}}>{fmtEur(stats.rev)}</span>
             </Row>
@@ -1568,7 +1599,7 @@ function ComptaTab({ data, sources: srcMap }) {
             <div key={bk.id||idx} style={{padding:"12px 16px",borderBottom:idx<allBk.length-1?"1px solid #f5f8fa":"none"}}>
               <Row style={{marginBottom:6,flexWrap:"wrap",gap:8}}>
                 <span style={{fontWeight:700,color:TEAL,fontSize:13}}>📅 {bk.dateLabel}</span>
-                <span style={{fontSize:12,color:"#888"}}>{bk.boatName==="Aloes Vera"?"🛥️ Aloès Vera":"🚤 Panamax"}</span>
+                <span style={{fontSize:12,color:"#888"}}>{`${boatIcon(bk.boatName)} ${boatDisplay(bk.boatName)}`}</span>
                 <span style={{background:srcColor(bk.source),color:"#fff",fontSize:10,padding:"2px 8px",borderRadius:7,fontWeight:700}}>{srcLabel(bk.source)}</span>
               </Row>
               <Row style={{flexWrap:"wrap",gap:12,fontSize:13,marginBottom:4}}>
@@ -1599,8 +1630,9 @@ function ComptaTab({ data, sources: srcMap }) {
       {view === "skippers" && (<>
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:8,marginBottom:14}}>
           <KPI icon="📅" label="Jours de sortie" value={daysTotal} color={TEAL} />
-          <KPI icon="🛥️" label="Jours Aloès Vera" value={daysAloes} color="#2471A3" />
-          <KPI icon="🚤" label="Jours Panamax" value={daysPanamax} color="#1A5F7A" />
+          {BOATS.map(b => (
+            <KPI key={b.key} icon={b.icon} label={`Jours ${b.display}`} value={daysByBoat[b.key] || 0} color={TEAL} />
+          ))}
         </div>
 
         <Section title="⚓ Calendrier des sorties">
@@ -1612,8 +1644,9 @@ function ComptaTab({ data, sources: srcMap }) {
                 <div style={{fontSize:11,color:"#888",marginTop:2}}>{d.bkCount} rés. · {d.pax} passager(s)</div>
               </div>
               <Row gap={6}>
-                {d.aloes  &&<span style={{background:"#EBF7FA",color:TEAL,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:8}}>🛥️ Aloès Vera</span>}
-                {d.panamax&&<span style={{background:"#EBF7FA",color:TEAL,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:8}}>🚤 Panamax</span>}
+                {BOATS.filter(b => d.actifs?.[b.key]).map(b => (
+                  <span key={b.key} style={{background:"#EBF7FA",color:TEAL,fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:8}}>{b.icon} {b.display}</span>
+                ))}
               </Row>
               <span style={{fontWeight:700,color:TEAL,fontSize:13,flexShrink:0}}>{fmtEur(d.rev)}</span>
             </Row>
@@ -1834,7 +1867,7 @@ function StatsTab({ data, sources: srcMap }) {
     for (const boat of date.boats) {
       for (const bk of boat.bookings) {
         if (source !== "all" && bk.source !== source) continue;
-        filtered.push({ ...bk, dateLabel: date.label, boatName: boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name });
+        filtered.push({ ...bk, dateLabel: date.label, boatName: boatDisplay(boat.name) });
       }
     }
   }
@@ -2094,10 +2127,8 @@ function WooTab({ data, save, notify }) {
       for (const label of [label1, label2].filter(Boolean)) {
         // Find existing entry or create virtual
         const existing = data.dates.find(d => d.label === label);
-        const entry = existing || { id: null, label, _virtual: true, boats: [
-          { id: "v-aloes-" + label, name: "Aloes Vera", emoji: "ferry", bookings: [] },
-          { id: "v-panamax-" + label, name: "Panamax",  emoji: "boat",  bookings: [] },
-        ]};
+        const entry = existing || { id: null, label, _virtual: true,
+          boats: BOATS.map(b => ({ id: `v-${b.key}-${label}`, name: b.name, emoji: b.emoji, bookings: [] })) };
         const b = bestBoat(entry);
         if (b && spots(b) > 0) { chosenLabel = label; dateEntry = entry; boat = b; break; }
       }
@@ -2162,8 +2193,7 @@ function WooTab({ data, save, notify }) {
       let existingDate = nextData.dates.find(d => d.label === dateEntry.label);
       if (!existingDate) {
         existingDate = { id: uid(), label: dateEntry.label, boats: [
-          { id: uid(), name: "Aloes Vera", emoji: "ferry", bookings: [] },
-          { id: uid(), name: "Panamax",    emoji: "boat",  bookings: [] },
+          ...freshBoats(),
         ]};
         nextData = { ...nextData, dates: [...nextData.dates, existingDate] };
       }
@@ -2263,7 +2293,7 @@ function WooTab({ data, save, notify }) {
           </div>
           {preview.map((item, i) => {
             const icon = item.status === "ready" ? (item.usedFallback ? "🟡" : "🟢") : item.status === "already" ? "✅" : item.status === "repair" ? "🔧" : "🔴";
-            const bname = item.boat?.name === "Aloes Vera" ? "Aloès Vera" : item.boat?.name;
+            const bname = boatDisplay(item.boat?.name);
             return (
               <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 0", borderBottom: "1px solid #f0f5f7", fontSize: 13 }}>
                 <span style={{ fontSize: 18, flexShrink: 0, marginTop: 1 }}>{icon}</span>
@@ -2278,7 +2308,7 @@ function WooTab({ data, save, notify }) {
                       <span>📅 {item.label}</span>
                       {item.usedFallback && <span style={{ color: ORANGE, fontSize: 11, marginLeft: 6 }}>(date de repli)</span>}
                       <span style={{ margin: "0 8px", color: "#ddd" }}>·</span>
-                      <span>{item.boat?.name === "Aloes Vera" ? "🛥️ Aloès Vera" : "🚤 Panamax"}</span>
+                      <span>{`${boatIcon(item.boat?.name)} ${boatDisplay(item.boat?.name)}`}</span>
                       <span style={{ margin: "0 8px", color: "#ddd" }}>·</span>
                       <span style={{ color: GREEN, fontWeight: 700 }}>{spots(item.boat)} place(s) libre(s)</span>
                       {item.infoComp && <><span style={{ margin: "0 8px", color: "#ddd" }}>·</span><span style={{ color: "#888", fontStyle: "italic" }}>"{item.infoComp}"</span></>}
@@ -2287,7 +2317,7 @@ function WooTab({ data, save, notify }) {
                     {(item.status === "already" || item.status === "repair") && item.where && (
                       <div style={{ fontSize: 12, color: "#888" }}>
                         Demandée : {item.label || "—"} · Placée : <strong style={{ color: DARK }}>{item.where.label}</strong>
-                        {" "}→ {item.where.date} · {item.where.boat === "Aloes Vera" ? "Aloès Vera" : item.where.boat}
+                        {" "}→ {item.where.date} · {boatDisplay(item.where.boat)}
                       </div>
                     )}
                     {item.status === "repair"  && (
@@ -2390,8 +2420,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   // ── Add reservation full page ──────────────
   if (adminStep === "add-form" && adding && addBoat) {
     const entry = data.dates.find(d => d.id === adding.dateId);
-    const boatIcon = addBoat.name === "Aloes Vera" ? "🛥️" : "🚤";
-    const boatName = addBoat.name === "Aloes Vera" ? "Aloès Vera" : addBoat.name;
+    const bIcon = boatIcon(addBoat.name);
+    const boatName = boatDisplay(addBoat.name);
     return (
       <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #deeaf0" }}>
         <button onClick={() => { setAdminStep("day"); setAdding(null); setAddBoat(null); }}
@@ -2477,8 +2507,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   if (adminStep === "edit-form" && editing) {
     const entry = data.dates.find(d => d.id === editing.dateId);
     const boat  = entry?.boats.find(b => b.id === editing.boatId);
-    const boatIcon = boat?.name === "Aloes Vera" ? "🛥️" : "🚤";
-    const boatName = boat?.name === "Aloes Vera" ? "Aloès Vera" : boat?.name;
+    const bIcon = boatIcon(boat?.name);
+    const boatName = boatDisplay(boat?.name);
     return (
       <div style={{ background: "#fff", borderRadius: 14, padding: 20, border: "1px solid #deeaf0" }}>
         <button onClick={() => { setAdminStep("day"); setEditing(null); }}
@@ -2594,8 +2624,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         {/* Boats capacity */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 }}>
           {entry.boats.map(boat => {
-            const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-            const displayName = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
+            const icon = boatIcon(boat.name);
+            const displayName = boatDisplay(boat.name);
             const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
             return (
               <div key={boat.id} style={{ background: boat.closed ? "#F6F6F6" : spots(boat) <= 0 ? RED_BG : "#fff", borderRadius: 12, padding: "14px 16px", border: `1px solid ${boat.closed ? "#ccc" : spots(boat) <= 0 ? RED+"50" : "#deeaf0"}` }}>
@@ -2640,8 +2670,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
           {allBookings.map((bk, idx) => {
             const isEd = editing?.boatId === bk.boat.id && editing?.bkId === bk.id;
-            const boatIcon = bk.boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-            const boatName = bk.boat.name === "Aloes Vera" ? "Aloès Vera" : bk.boat.name;
+            const boatIcon = bk.boatIcon(boat.name);
+            const boatName = boatDisplay(bk.boat.name);
             const srcColor = SOURCES[bk.source]?.color || "#999";
             const srcLabel = SOURCES[bk.source]?.label || "?";
             const isWoo    = bk.source === "woo";
@@ -2854,7 +2884,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   {/* Day header */}
                   <div style={{ background:isToday?TEAL:"#F0F8FB", padding:"10px 14px", display:"flex", alignItems:"center", gap:10, cursor:"pointer" }}
                     onClick={()=>{ const _ex = entry || data.dates.find(x => dateKeyOf(x.label) === key); if(_ex){ setAdminStep("day"); setSelDay(_ex.id); } else {
-                      const lbl=labelFromDate(cell); const newEntry={id:uid(),label:lbl,boats:[{id:uid(),name:"Aloes Vera",emoji:"ferry",bookings:[]},{id:uid(),name:"Panamax",emoji:"boat",bookings:[]}]};
+                      const lbl=labelFromDate(cell); const newEntry={id:uid(),label:lbl,boats:freshBoats()};
                       const next={...data,dates:[...data.dates,newEntry]}; save(next); setAdminStep("day"); setSelDay(newEntry.id);
                     }}}>
                     <div style={{ flex:1 }}>
@@ -2868,7 +2898,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                           const r=spots(boat); const p=pct(boat);
                           return(
                             <div key={boat.id} style={{ textAlign:"center", minWidth:42 }}>
-                              <div style={{ fontSize:11 }}>{boat.name==="Aloes Vera"?"🛥️":"🚤"}</div>
+                              <div style={{ fontSize:11 }}>{boatIcon(boat.name)}</div>
                               <div style={{ fontSize:10, fontWeight:700, color:isToday?"#fff":r<=0?CORAL:"#FA9F6A" }}>R{r}</div>
                               <div style={{ height:3, width:40, borderRadius:2, background:"rgba(255,255,255,0.3)", overflow:"hidden", marginTop:2 }}>
                                 <div style={{ height:"100%", width:`${p}%`, background:isToday?"#fff":barColor(boat), borderRadius:2 }}/>
@@ -2912,7 +2942,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                               return(
                                 <div key={bk.id} style={{ padding:"10px 12px", borderTop:i>0?`1px solid ${srcColor}15`:"none" }}>
                                   <div style={{ fontWeight:700, color:DARK, fontSize:13, marginBottom:5 }}>
-                                    {bk.boat.name==="Aloes Vera"?"🛥️":"🚤"} {bk.name}
+                                    {bk.boatIcon(boat.name)} {bk.name}
                                   </div>
                                   <div style={{ fontSize:12, color:"#555", marginBottom:3 }}>
                                     👥 {bk.children?`${bk.adults}+${bk.children} pax`:`${bk.adults} pax`}
@@ -2977,8 +3007,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   // Auto-create the date entry
                   const lbl = labelFromDate(cell);
                   const newEntry = { id: uid(), label: lbl, boats: [
-                    { id: uid(), name: "Aloes Vera", emoji: "ferry", bookings: [] },
-                    { id: uid(), name: "Panamax",    emoji: "boat",  bookings: [] },
+                    ...freshBoats(),
                   ]};
                   const next = { ...data, dates: [...data.dates, newEntry] };
                   save(next);
@@ -3005,7 +3034,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                       <div key={boat.id} style={{ padding: "2px 4px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
                           <span style={{ fontSize: 7, color: isToday ? "rgba(255,255,255,0.7)" : "#888" }}>
-                            {boat.name === "Aloes Vera" ? "🛥️" : "🚤"}
+                            {boatIcon(boat.name)}
                           </span>
                           <span style={{ fontSize: 8, fontWeight: 800, color: boat.closed ? "#bbb" : r <= 0 ? "#fff" : "#FA9F6A", background: r <= 0 && !boat.closed ? RED : "transparent", borderRadius: 3, padding: r <= 0 && !boat.closed ? "0 3px" : 0 }}>
                             {boat.closed ? "Off" : r <= 0 ? "💥" : `R${r}`}
@@ -3052,10 +3081,15 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
   // Idempotent — une fois fusionnées, il n'y a plus rien à faire.
   useEffect(() => {
     if (!data?.dates?.length) return;
-    const { dates, merged } = mergeDuplicateDates(data.dates);
-    if (merged > 0) {
-      save({ ...data, dates });
-      notify(`${merged} date(s) en double fusionnée(s) ✓`);
+    const fusion = mergeDuplicateDates(data.dates);
+    const flotte = ensureFleet(fusion.dates);
+    if (fusion.merged > 0 || flotte.ajoutes > 0) {
+      save({ ...data, dates: flotte.dates });
+      const msg = [
+        fusion.merged  && `${fusion.merged} date(s) en double fusionnée(s)`,
+        flotte.ajoutes && `${flotte.ajoutes} bateau(x) ajouté(s) au planning`,
+      ].filter(Boolean).join(" · ");
+      notify(`${msg} ✓`);
     }
   }, [data]);
   const toggle = id => setExp(e => ({ ...e, [id]: !e[id] }));
@@ -3172,7 +3206,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
                 {parsed.map(d => (
                   <div key={d.id} style={{ background: "#F8FBFC", borderRadius: 9, padding: "10px 14px", marginBottom: 6, border: "1px solid #deeaf0", fontSize: 13 }}>
                     <strong style={{ color: TEAL }}>{d.label}</strong>
-                    {d.boats.map(b => <div key={b.id} style={{ color: "#666", marginLeft: 8, marginTop: 3 }}>{b.name === "Aloes Vera" ? "🛥️ Aloès Vera" : "🚤 Panamax"} — {b.bookings.length} rés., {boatPax(b)} pax, {fmtEur(boatRev(b))}</div>)}
+                    {d.boats.map(b => <div key={b.id} style={{ color: "#666", marginLeft: 8, marginTop: 3 }}>{`${boatIcon(b.name)} ${boatDisplay(b.name)}`} — {b.bookings.length} rés., {boatPax(b)} pax, {fmtEur(boatRev(b))}</div>)}
                   </div>
                 ))}
               </div>
@@ -3250,7 +3284,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
     const aujourdhui = new Date(); aujourdhui.setHours(0,0,0,0);
     let passees = 0, futures = 0;
     for (const [label, a] of Object.entries(planning)) {
-      if (a?.aloes !== id && a?.panamax !== id) continue;
+      if (!BOATS.some(b => a?.[b.key] === id)) continue;
       const dd = dateFromLabel(label);
       (dd && dd >= aujourdhui) ? futures++ : passees++;
     }
@@ -3281,8 +3315,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
       const dd = dateFromLabel(label);
       if (!dd || dd < aujourdhui) continue;
       const na = { ...a };
-      if (na.aloes   === sk.id) delete na.aloes;
-      if (na.panamax === sk.id) delete na.panamax;
+      for (const b of BOATS) if (na[b.key] === sk.id) delete na[b.key];
       if (Object.keys(na).length) p[label] = na; else delete p[label];
     }
 
@@ -3324,14 +3357,14 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
             const label  = labelFromDate(cell);
             const assign = planning[label] || {};
             const isToday= cell.toDateString()===today.toDateString();
-            const aSk    = connus.find(s=>s.id===assign.aloes);
-            const pSk    = connus.find(s=>s.id===assign.panamax);
+            const affectes = BOATS.map(b => ({ b, sk: connus.find(s => s.id === assign[b.key]) })).filter(x => x.sk);
             return (
               <button key={cell.toISOString()} onClick={()=>setDayModal({label})}
-                style={{ background:isToday?`${TEAL}18`:(aSk||pSk)?"#F0F8FB":"#fff", border:isToday?`2px solid ${TEAL}`:"1px solid #eee", borderRadius:7, padding:"4px 2px", cursor:"pointer", minHeight:56, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                style={{ background:isToday?`${TEAL}18`:affectes.length?"#F0F8FB":"#fff", border:isToday?`2px solid ${TEAL}`:"1px solid #eee", borderRadius:7, padding:"4px 2px", cursor:"pointer", minHeight:56, display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
                 <span style={{ fontSize:11, fontWeight:isToday?800:500, color:isToday?TEAL:DARK }}>{cell.getDate()}</span>
-                {aSk&&<div style={{ fontSize:7, background:aSk.color, color:"#fff", borderRadius:3, padding:"1px 3px", fontWeight:700, width:"100%", textAlign:"center", overflow:"hidden" }}>🛥 {aSk.name}</div>}
-                {pSk&&<div style={{ fontSize:7, background:pSk.color, color:"#fff", borderRadius:3, padding:"1px 3px", fontWeight:700, width:"100%", textAlign:"center", overflow:"hidden" }}>🚤 {pSk.name}</div>}
+                {affectes.map(({b, sk}) => (
+                  <div key={b.key} style={{ fontSize:7, background:sk.color, color:"#fff", borderRadius:3, padding:"1px 3px", fontWeight:700, width:"100%", textAlign:"center", overflow:"hidden" }}>{b.icon} {sk.name}</div>
+                ))}
               </button>
             );
           })}
@@ -3343,9 +3376,9 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
                 <span style={{ fontWeight:800, color:TEAL, fontSize:16 }}>📅 {dayModal.label}</span>
                 <button onClick={()=>setDayModal(null)} style={{ marginLeft:"auto", background:"none", border:"none", cursor:"pointer", fontSize:22, color:"#bbb", lineHeight:1 }}>✕</button>
               </Row>
-              {[{key:"aloes",icon:"🛥️",name:"Aloès Vera"},{key:"panamax",icon:"🚤",name:"Panamax"}].map(boat=>(
+              {BOATS.map(boat=>(
                 <div key={boat.key} style={{ marginBottom:14 }}>
-                  <Label>{boat.icon} {boat.name}</Label>
+                  <Label>{boat.icon} {boat.display}</Label>
                   <select value={planning[dayModal.label]?.[boat.key]||""} onChange={e=>assignSkipper(dayModal.label,boat.key,e.target.value)} style={inputStyle}>
                     <option value="">— Non assigné —</option>
                     {skippers.filter(s=>s.active).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
@@ -3605,7 +3638,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
   // All bookings across all dates for this skipper's planning
   const myPlanningDates = Object.entries(skData?.planning || {})
-    .filter(([label, assignment]) => assignment?.aloes === skipperUser.id || assignment?.panamax === skipperUser.id)
+    .filter(([label, assignment]) => BOATS.some(b => assignment?.[b.key] === skipperUser.id))
     .map(([label]) => label)
     .sort();
 
@@ -3643,7 +3676,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
       })
     })};
     save(next);
-    toast(`${bk.name} déplacé vers ${toBoat.name === "Aloes Vera" ? "Aloès Vera" : toBoat.name} ✓`);
+    toast(`${bk.name} déplacé vers ${boatDisplay(toBoat.name)} ✓`);
   };
 
   // Assign skipper to boat for a date
@@ -3728,18 +3761,21 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
               {totalReste === 0 && allBk.length > 0 && <span style={{ fontSize:12, fontWeight:700, color:GREEN }}>✅ Tout soldé</span>}
             </Row>
             {/* Skipper assignment */}
-            {(planning.aloes || planning.panamax) && (
+            {BOATS.some(b => planning[b.key]) && (
               <Row gap={8} style={{ marginTop:8, flexWrap:"wrap" }}>
-                {planning.aloes  && <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 10px", borderRadius:7, fontWeight:600 }}>🛥️ {(skData?.skippers||[]).find(s=>s.id===planning.aloes)?.name||planning.aloes}</span>}
-                {planning.panamax&& <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 10px", borderRadius:7, fontWeight:600 }}>🚤 {(skData?.skippers||[]).find(s=>s.id===planning.panamax)?.name||planning.panamax}</span>}
+                {BOATS.filter(b => planning[b.key]).map(b => (
+                  <span key={b.key} style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 10px", borderRadius:7, fontWeight:600 }}>
+                    {b.icon} {(skData?.skippers||[]).find(s=>s.id===planning[b.key])?.name || planning[b.key]}
+                  </span>
+                ))}
               </Row>
             )}
           </div>
 
           {entry.boats.map(boat => {
-            const icon = boat.name==="Aloes Vera"?"🛥️":"🚤";
-            const dname = boat.name==="Aloes Vera"?"Aloès Vera":boat.name;
-            const otherBoat = entry.boats.find(b=>b.id!==boat.id);
+            const icon = boatIcon(boat.name);
+            const dname = boatDisplay(boat.name);
+            const autresBateaux = entry.boats.filter(b=>b.id!==boat.id);
 
             return (
               <div key={boat.id} style={{ background:"#fff", borderRadius:14, marginBottom:10, border:"1px solid #deeaf0", overflow:"hidden" }}>
@@ -3794,12 +3830,13 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                             setPayFormAll(blankPayLines(reste));
                           }}>💳 Encaisser</Btn>
                           <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={boat.id} small />
-                          {otherBoat && (
-                            <button onClick={() => moveBooking(bk, boat, otherBoat, entry)}
+                          {autresBateaux.map(ob => (
+                            <button key={ob.id} onClick={() => moveBooking(bk, boat, ob, entry)}
+                              title={`Transférer vers ${boatDisplay(ob.name)}`}
                               style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"4px 9px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
-                              → {otherBoat.name==="Aloes Vera"?"Aloès":"Panamax"}
+                              → {boatShort(ob.name)}
                             </button>
-                          )}
+                          ))}
                           {bk.phone && (() => {
                             const tel = fullPhone(bk);
                             return (
@@ -3899,13 +3936,13 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           <div style={{ fontWeight:700, color:TEAL, fontSize:14, marginBottom:12 }}>⚓ Affectation des skippers</div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10 }}>
             {todayEntry.boats.map(boat => {
-              const boatKey   = boat.name === "Aloes Vera" ? "aloes" : "panamax";
+              const boatKey   = boatKey(boat.name);
               const assigned  = planning[boatKey];
               const allSkip   = skData?.skippers || [];
               return (
                 <div key={boat.id} style={{ background:"#F0F8FB", borderRadius:10, padding:"12px 14px", border:`1px solid ${TEAL}20` }}>
                   <div style={{ fontSize:13, fontWeight:700, color:DARK, marginBottom:8 }}>
-                    {boat.name === "Aloes Vera" ? "🛥️ Aloès Vera" : "🚤 Panamax"}
+                    {`${boatIcon(boat.name)} ${boatDisplay(boat.name)}`}
                   </div>
                   <select value={assigned||""} onChange={e => assignSkipper(todayLabel, boatKey, e.target.value)}
                     style={{ ...inputStyle, fontSize:13, fontWeight:600 }}>
@@ -3923,9 +3960,9 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
         {/* Bookings per boat */}
         {todayEntry.boats.map(boat => {
-          const icon = boat.name === "Aloes Vera" ? "🛥️" : "🚤";
-          const dname = boat.name === "Aloes Vera" ? "Aloès Vera" : boat.name;
-          const otherBoat = todayEntry.boats.find(b => b.id !== boat.id);
+          const icon = boatIcon(boat.name);
+          const dname = boatDisplay(boat.name);
+          const autresBateaux = todayEntry.boats.filter(b => b.id !== boat.id);
           const totalReste = boat.bookings.reduce((s,bk) => s + Math.max(0, bk.price - (bk.acompte_amount||0) - (bk.solde_encaisse||0)), 0);
 
           return (
@@ -3995,12 +4032,13 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                             💳 Encaisser le solde
                           </Btn>
                           <StripeButton bk={bk} dateLabel={todayLabel} dateId={todayEntry.id} boatId={boat.id} small />
-                          {otherBoat && (
-                            <button onClick={() => moveBooking(bk, boat, otherBoat, todayEntry)}
+                          {autresBateaux.map(ob => (
+                            <button key={ob.id} onClick={() => moveBooking(bk, boat, ob, todayEntry)}
+                              title={`Transférer vers ${boatDisplay(ob.name)}`}
                               style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
-                              → {otherBoat.name==="Aloes Vera"?"Aloès":"Panamax"}
+                              → {boatShort(ob.name)}
                             </button>
-                          )}
+                          ))}
                         </Row>
                       )}
 
@@ -4077,9 +4115,8 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
             const label  = labelFromDate(cell);
             const assign = planning[label] || {};
             const isToday = cell.toDateString() === today.toDateString();
-            const aloesSk  = allSkippers.find(s=>s.id===assign.aloes);
-            const panaSkk  = allSkippers.find(s=>s.id===assign.panamax);
-            const isMine   = assign.aloes===skipperUser.id || assign.panamax===skipperUser.id;
+            const affectes = BOATS.map(b => ({ b, sk: allSkippers.find(s => s.id === assign[b.key]) })).filter(x => x.sk);
+            const isMine   = BOATS.some(b => assign[b.key] === skipperUser.id);
 
             return (
               <div key={cell.toISOString()} style={{
@@ -4090,7 +4127,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                 <span style={{ fontSize:11, fontWeight:isToday?800:500, color:isToday?"#fff":isMine?skipperUser.color:DARK }}>{cell.getDate()}</span>
                 {aloesSk && <div style={{ fontSize:7, background:aloesSk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🛥 {aloesSk.name}</div>}
                 {panaSkk  && <div style={{ fontSize:7, background:panaSkk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>🚤 {panaSkk.name}</div>}
-                {(() => { const d = data.dates.find(x=>x.label===label); if(!d) return null; return d.boats.filter(b=>b.closed).map(b=><div key={b.id} style={{ fontSize:7, background:"#ddd", color:"#888", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{b.name==="Aloes Vera"?"🛥":"🚤"} Off</div>); })()}
+                {(() => { const d = data.dates.find(x=>x.label===label); if(!d) return null; return d.boats.filter(b=>b.closed).map(b=><div key={b.id} style={{ fontSize:7, background:"#ddd", color:"#888", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{boatIcon(b.name)} Off</div>); })()}
               </div>
             );
           })}
@@ -4103,13 +4140,13 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
             return d && d >= new Date(today.getFullYear(),today.getMonth(),today.getDate());
           }).slice(0,5).map((label,i) => {
             const assign = planning[label] || {};
-            const onAloes = assign.aloes === skipperUser.id;
-            const onPana  = assign.panamax === skipperUser.id;
+            const miens = BOATS.filter(b => assign[b.key] === skipperUser.id);
             return (
               <Row key={i} style={{ padding:"6px 0", borderBottom:"1px solid #e8f2f7", gap:10 }}>
                 <span style={{ fontWeight:600, color:DARK, fontSize:13, flex:1 }}>{label}</span>
-                {onAloes && <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 8px", borderRadius:6, fontWeight:600 }}>🛥️ Aloès Vera</span>}
-                {onPana  && <span style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 8px", borderRadius:6, fontWeight:600 }}>🚤 Panamax</span>}
+                {miens.map(b => (
+                  <span key={b.key} style={{ fontSize:11, background:"#EBF7FA", color:TEAL, padding:"2px 8px", borderRadius:6, fontWeight:600 }}>{b.icon} {b.display}</span>
+                ))}
               </Row>
             );
           })}
@@ -4130,11 +4167,11 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
     // My upcoming slots
     const mySlots = Object.entries(planning)
-      .filter(([label, assign]) => assign?.aloes===skipperUser.id || assign?.panamax===skipperUser.id)
+      .filter(([label, assign]) => BOATS.some(b => assign?.[b.key] === skipperUser.id))
       .flatMap(([label, assign]) => {
         const slots = [];
-        if (assign.aloes===skipperUser.id)   slots.push({ label, boatKey:"aloes",   boatName:"Aloès Vera", icon:"🛥️" });
-        if (assign.panamax===skipperUser.id) slots.push({ label, boatKey:"panamax", boatName:"Panamax",    icon:"🚤" });
+        for (const b of BOATS) if (assign[b.key] === skipperUser.id)
+          slots.push({ label, boatKey: b.key, boatName: b.display, icon: b.icon });
         return slots;
       })
       .filter(s => { const d=dateFromLabel(s.label); return d && d >= new Date(); })
@@ -4142,11 +4179,11 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 
     // Other skipper's upcoming slots
     const theirSlots = otherSkipper ? Object.entries(planning)
-      .filter(([label, assign]) => assign?.aloes===otherSkipper.id || assign?.panamax===otherSkipper.id)
+      .filter(([label, assign]) => BOATS.some(b => assign?.[b.key] === otherSkipper.id))
       .flatMap(([label, assign]) => {
         const slots = [];
-        if (assign.aloes===otherSkipper.id)   slots.push({ label, boatKey:"aloes",   boatName:"Aloès Vera", icon:"🛥️" });
-        if (assign.panamax===otherSkipper.id) slots.push({ label, boatKey:"panamax", boatName:"Panamax",    icon:"🚤" });
+        for (const b of BOATS) if (assign[b.key] === otherSkipper.id)
+          slots.push({ label, boatKey: b.key, boatName: b.display, icon: b.icon });
         return slots;
       })
       .filter(s => { const d=dateFromLabel(s.label); return d && d >= new Date(); })
