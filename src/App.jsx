@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.30-k";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.09.30-l";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 
 // ── Flotte ─────────────────────────────────────────────────────
@@ -278,9 +278,10 @@ function ensureFleet(dates) {
   const aujourdhui = new Date(); aujourdhui.setHours(0, 0, 0, 0);
   let ajoutes = 0;
   const out = dates.map(e => {
+    if (!e || !Array.isArray(e.boats)) return e;
     const d = dateFromLabel(e.label);
     if (d && d < aujourdhui) return e;
-    const manquants = BOATS.filter(b => !e.boats.some(x => x.name === b.name));
+    const manquants = BOATS.filter(b => !e.boats.some(x => x?.name === b.name));
     if (!manquants.length) return e;
     ajoutes += manquants.length;
     return { ...e, boats: [...e.boats, ...manquants.map(b => ({ id: uid(), name: b.name, emoji: b.emoji, bookings: [] }))] };
@@ -293,14 +294,16 @@ function mergeDuplicateDates(dates) {
   const out = [];
   let merged = 0;
   for (const e of dates) {
-    const k = dateKeyOf(e.label);
+    const k = e && Array.isArray(e.boats) ? dateKeyOf(e.label) : null;
     if (!k || !idxByKey.has(k)) { if (k) idxByKey.set(k, out.length); out.push(e); continue; }
     const i = idxByKey.get(k);
-    const boats = out[i].boats.map(b => ({ ...b, bookings: [...b.bookings] }));
+    if (!Array.isArray(out[i]?.boats)) { out.push(e); continue; }
+    const boats = out[i].boats.map(b => ({ ...b, bookings: [...(b.bookings || [])] }));
     for (const ob of e.boats) {
+      if (!ob) continue;
       const tb = boats.find(b => b.name === ob.name);
-      if (tb) { tb.bookings.push(...ob.bookings); tb.closed = !!(tb.closed || ob.closed); }
-      else boats.push({ ...ob, bookings: [...ob.bookings] });
+      if (tb) { tb.bookings.push(...(ob.bookings || [])); tb.closed = !!(tb.closed || ob.closed); }
+      else boats.push({ ...ob, bookings: [...(ob.bookings || [])] });
     }
     out[i] = { ...out[i], boats };
     merged++;
@@ -4897,8 +4900,9 @@ function LoginScreen({ notice }) {
         </div>
       </div>
 
-      <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11, marginTop:20, textAlign:"center" }}>
-        Accès réservé à l'équipe Panamax
+      <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11, marginTop:20, textAlign:"center", lineHeight:1.6 }}>
+        Accès réservé à l'équipe Panamax<br/>
+        <span style={{ color:"rgba(255,255,255,0.3)", fontSize:10 }}>Version {APP_VERSION}</span>
       </div>
     </div>
   );
