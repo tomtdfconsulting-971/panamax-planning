@@ -123,6 +123,49 @@ window.authErrorMessage = (code) => ({
   'auth/requires-recent-login':  "Reconnectez-vous avant de changer votre mot de passe.",
 }[code] || "Connexion impossible. Réessayez.");
 
+// ── Filet de sécurité ──────────────────────────────────────────
+// Sans cela, la moindre erreur de rendu donne une page blanche muette.
+// Ici l'erreur s'affiche, lisible depuis un téléphone.
+class ErrorBoundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null, info: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err, info) { console.error("Erreur de rendu :", err, info); this.setState({ info }); }
+  render() {
+    if (!this.state.err) return this.props.children;
+    const pile = (this.state.info?.componentStack || "").split("\n").slice(0, 6).join("\n");
+    return (
+      <div style={{ minHeight:"100vh", background:"#FEF8F6", padding:"24px 16px", boxSizing:"border-box",
+                    fontFamily:"'Segoe UI', system-ui, sans-serif", color:"#0D3D52" }}>
+        <div style={{ maxWidth:520, margin:"0 auto" }}>
+          <div style={{ fontSize:38, marginBottom:8 }}>⚠️</div>
+          <h2 style={{ margin:"0 0 6px", color:"#D6202A", fontSize:18 }}>L'application a rencontré une erreur</h2>
+          <p style={{ color:"#666", fontSize:13, lineHeight:1.6, marginBottom:16 }}>
+            Transmettez ce message pour correction. Vos données ne sont pas affectées.
+          </p>
+          <pre style={{ background:"#fff", border:"1px solid #E8673A40", borderRadius:10, padding:"12px 14px",
+                        fontSize:11.5, lineHeight:1.5, whiteSpace:"pre-wrap", wordBreak:"break-word",
+                        color:"#D6202A", margin:"0 0 14px" }}>
+{String(this.state.err?.message || this.state.err)}
+          </pre>
+          {pile && (
+            <pre style={{ background:"#fff", border:"1px solid #e0eef3", borderRadius:10, padding:"12px 14px",
+                          fontSize:10.5, lineHeight:1.5, whiteSpace:"pre-wrap", wordBreak:"break-word",
+                          color:"#888", margin:"0 0 16px" }}>{pile}</pre>
+          )}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <button onClick={() => window.location.reload()}
+              style={{ background:"#1A5F7A", color:"#fff", border:"none", borderRadius:10, padding:"11px 20px",
+                       fontSize:14, fontWeight:700, cursor:"pointer" }}>Recharger</button>
+            <button onClick={() => fbSignOut(auth).then(() => window.location.reload())}
+              style={{ background:"#fff", color:"#1A5F7A", border:"1px solid #1A5F7A40", borderRadius:10,
+                       padding:"11px 20px", fontSize:14, fontWeight:700, cursor:"pointer" }}>Se déconnecter</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+}
+
 // ── Chargeur : gère l'état d'authentification et le rôle ────────
 function AuthLoader() {
   const [state, setState] = React.useState({ status: 'loading', session: null });
@@ -171,7 +214,11 @@ function AuthLoader() {
     </div>
   );
 
-  return <App session={state.session} notice={state.notice} />;
+  return (
+    <ErrorBoundary>
+      <App session={state.session} notice={state.notice} />
+    </ErrorBoundary>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(
