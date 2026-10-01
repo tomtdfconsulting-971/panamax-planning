@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.09.30-n";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.01-o";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -292,6 +292,56 @@ function ensureFleet(dates) {
     return { ...e, boats: [...e.boats, ...manquants.map(b => ({ id: uid(), name: b.name, emoji: b.emoji, bookings: [] }))] };
   });
   return { dates: out, ajoutes };
+}
+
+// ── Déplacement d'une réservation ──────────────────────────────
+// Change de bateau, de date, ou les deux. Crée la date d'arrivée si besoin,
+// y ajoute le bateau manquant, et refuse si la capacité est dépassée.
+function moveReservation(data, { bk, fromDateId, fromBoatId, toLabel, toBoatName }) {
+  const pax = (bk.adults || 0) + (bk.children || 0);
+  let dates = data.dates.map(d => ({ ...d, boats: d.boats.map(b => ({ ...b, bookings: [...b.bookings] })) }));
+
+  // Date d'arrivée : réutiliser celle qui existe, sinon la créer
+  const cleCible = dateKeyOf(toLabel);
+  let iCible = dates.findIndex(d => dateKeyOf(d.label) === cleCible);
+  if (iCible === -1) { dates.push({ id: uid(), label: toLabel, boats: freshBoats() }); iCible = dates.length - 1; }
+
+  // Bateau d'arrivée : l'ajouter si cette date ne l'a pas encore
+  let jBateau = dates[iCible].boats.findIndex(b => b.name === toBoatName);
+  if (jBateau === -1) {
+    const m = boatMeta(toBoatName);
+    dates[iCible].boats.push({ id: uid(), name: m.name, emoji: m.emoji, bookings: [] });
+    jBateau = dates[iCible].boats.length - 1;
+  }
+  const cible = dates[iCible].boats[jBateau];
+
+  // Rien à faire si l'origine est déjà la destination
+  const memeEndroit = dates[iCible].id === fromDateId && cible.id === fromBoatId;
+  if (memeEndroit) return { error: "Cette réservation est déjà sur ce bateau à cette date." };
+
+  if (cible.closed) return { error: `${boatDisplay(toBoatName)} est fermé à la vente ce jour-là.` };
+
+  const occupes = cible.bookings.reduce((s, x) => s + x.adults + x.children, 0);
+  if (occupes + pax > MAX_CAP) {
+    return { error: `${boatDisplay(toBoatName)} ne dispose que de ${Math.max(0, MAX_CAP - occupes)} place(s) le ${toLabel}, il en faut ${pax}.` };
+  }
+
+  // Retirer de l'emplacement d'origine
+  let trouve = false;
+  dates = dates.map(d => ({ ...d, boats: d.boats.map(b => {
+    if (b.bookings.some(x => x.id === bk.id)) trouve = true;
+    return { ...b, bookings: b.bookings.filter(x => x.id !== bk.id) };
+  })}));
+  if (!trouve) return { error: "Réservation introuvable." };
+
+  // Ajouter à l'arrivée
+  const iFinal = dates.findIndex(d => dateKeyOf(d.label) === cleCible);
+  dates[iFinal].boats = dates[iFinal].boats.map(b =>
+    b.name === toBoatName
+      ? { ...b, bookings: [...b.bookings, { ...bk, dateId: dates[iFinal].id, boatId: b.id }] }
+      : b);
+
+  return { data: { ...data, dates } };
 }
 
 function mergeDuplicateDates(dates) {
@@ -650,8 +700,11 @@ function ResellerPortal({ data, save, session }) {
   const [step,  setStep]  = useState("cal"); // cal | boat | form | ok | mes-resa | edit-resa
   const [selDate,       setSelDate]       = useState(null);
   const [selBoat,       setSelBoat]       = useState(null);
-  const [form,          setForm]          = useState({ ...BLANK });
+  // Un commercial réserve en son nom : le référent est connu dès l'ouverture
+  const formVierge = () => ({ ...BLANK, source: session?.role === "commercial" ? (session.refKey || "") : "" });
+  const [form,          setForm]          = useState(formVierge);
   const [editingPending, setEditingPending] = useState(null);
+  const [moveBk,         setMoveBk]         = useState(null);   // réservation en cours de déplacement
   const [editForm,       setEditForm]      = useState({ ...BLANK });
   const [delPending,     setDelPending]    = useState(null);
   // Un commercial est identifié par son compte et ne peut pas en changer ;
@@ -665,7 +718,7 @@ function ResellerPortal({ data, save, session }) {
     const d = new Date(); d.setHours(0,0,0,0); return d; // Start from today
   });
 
-  const reset = () => { setStep("cal"); setSelDate(null); setSelBoat(null); setForm({ ...BLANK }); };
+  const reset = () => { setStep("cal"); setSelDate(null); setSelBoat(null); setForm(formVierge()); };
 
   // Build a lookup: "YYYY-M-D" → real date entry
   const byDay = {};
@@ -920,12 +973,21 @@ function ResellerPortal({ data, save, session }) {
               </div>
             </>);
           })()}
-          <div style={{ marginBottom: 14 }}>
-            <FSelect label="Référent(e)" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
-              <option value="">— Sélectionner —</option>
-            {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-            </FSelect>
-          </div>
+          {/* Un commercial réserve toujours en son nom : le champ est inutile */}
+          {isLockedCommercial ? (
+            <div style={{ marginBottom: 14, background: "#F0F8FB", borderRadius: 9, padding: "9px 13px",
+                          border: `1px solid ${TEAL}20`, fontSize: 12.5, color: "#666" }}>
+              Réservation enregistrée au nom de{" "}
+              <strong style={{ color: TEAL }}>{SOURCES[form.source]?.label || session?.name}</strong>
+            </div>
+          ) : (
+            <div style={{ marginBottom: 14 }}>
+              <FSelect label="Référent(e)" value={form.source} onChange={e => setForm(f => ({ ...f, source: e.target.value }))}>
+                <option value="">— Sélectionner —</option>
+                {Object.entries(SOURCES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              </FSelect>
+            </div>
+          )}
           <div style={{ marginBottom: 14 }}>
             <FInput label="Nom du client" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Nom du client..." />
           </div>
@@ -1103,6 +1165,11 @@ function ResellerPortal({ data, save, session }) {
                 ) : (
                   <Row gap={8}>
                     <Btn small onClick={() => { setEditingPending(p); setEditForm({ adults: p.adults, children: p.children, name: p.name, source: p.source, phone: p.phone, notes: p.notes || "", price: p.price }); setStep("edit-resa"); }}>✏️ Modifier</Btn>
+                    <Btn small onClick={() => {
+                      const e = data.dates.find(d => d.id === p.dateId);
+                      const b = e?.boats.find(x => x.id === p.boatId);
+                      if (e && b) setMoveBk({ entry: e, boat: b, bk: p });
+                    }}>↔️ Déplacer</Btn>
                     <Btn small variant="danger" onClick={() => setDelPending(p.id)}>✕ Annuler la demande</Btn>
                   </Row>
                 )}
@@ -1388,6 +1455,11 @@ function ResellerPortal({ data, save, session }) {
         </div>
       </div>
       </>)}
+
+      {moveBk && (
+        <MoveDialog data={data} save={save} entry={moveBk.entry} boat={moveBk.boat} bk={moveBk.bk}
+          onClose={() => setMoveBk(null)} onDone={() => setStep("mes-resa")} />
+      )}
     </div>
   );
 }
@@ -2462,6 +2534,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const [viewMode,  setViewMode]  = useState("week"); // "month" | "week"
   const [payBk,     setPayBk]     = useState(null);   // réservation dont on corrige l'encaissement
   const [payDraft,  setPayDraft]  = useState([]);
+  const [moveBk,    setMoveBk]    = useState(null);   // { entry, boat, bk } en cours de déplacement
 
   // Ouvre l'éditeur avec les montants déjà encaissés
   const openPay = (bk) => {
@@ -2888,6 +2961,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                     style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
                   <button onClick={() => { setPayBk(payBk === bk.id ? null : bk.id); if (payBk !== bk.id) openPay(bk); }}
                     style={{ background:"#FFF8EE", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:ORANGE, fontWeight:600 }}>💳 Encaissement</button>
+                  <button onClick={() => setMoveBk({ entry, boat: bk.boat, bk })}
+                    style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>↔️ Déplacer</button>
                   <button onClick={() => setDelBk(bk.id)}
                     style={{ background:"#FEF0EB", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:CORAL, fontWeight:600 }}>🗑 Supprimer</button>
                 </div>
@@ -3160,6 +3235,11 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         })}
       </div>
       </>)}
+
+      {moveBk && (
+        <MoveDialog data={data} save={save} entry={moveBk.entry} boat={moveBk.boat} bk={moveBk.bk}
+          onClose={() => setMoveBk(null)} onDone={(m) => notify(m)} />
+      )}
     </div>
   );
 }
@@ -3720,6 +3800,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
   const [payForm, setPayForm] = useState([]);          // [{ methode, montant }]
   const [notif,   setNotif]   = useState(null);
   const [exchReq, setExchReq] = useState(null);       // exchange request being composed
+  const [moveBk,  setMoveBk]  = useState(null);       // réservation en cours de déplacement
 
   // ── États des sous-vues, remontés ici pour éviter la perte de focus ──
   const [openBkId,   setOpenBkId]   = useState(null);            // TodayTab
@@ -3768,17 +3849,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
   };
 
   // Move booking from one boat to another
-  const moveBooking = (bk, fromBoat, toBoat, dateEntry) => {
-    const next = { ...data, dates: data.dates.map(d => d.label !== dateEntry.label ? d : {
-      ...d, boats: d.boats.map(b => {
-        if (b.id === fromBoat.id) return { ...b, bookings: b.bookings.filter(x => x.id !== bk.id) };
-        if (b.id === toBoat.id)   return { ...b, bookings: [...b.bookings, bk] };
-        return b;
-      })
-    })};
-    save(next);
-    toast(`${bk.name} déplacé vers ${boatDisplay(toBoat.name)} ✓`);
-  };
 
   // Assign skipper to boat for a date
   const assignSkipper = (dateLabel, boatKey, skipperId) => {
@@ -3876,7 +3946,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           {entry.boats.map(boat => {
             const icon = boatIcon(boat.name);
             const dname = boatDisplay(boat.name);
-            const autresBateaux = entry.boats.filter(b=>b.id!==boat.id);
 
             return (
               <div key={boat.id} style={{ background:"#fff", borderRadius:14, marginBottom:10, border:"1px solid #deeaf0", overflow:"hidden" }}>
@@ -3924,6 +3993,12 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           <div style={{ fontSize:10, color:"#aaa" }}>{fmtEur(bk.price)} total</div>
                         </div>
                       </Row>
+                      <Row gap={8} style={{ marginTop:6, flexWrap:"wrap" }}>
+                        <button onClick={() => setMoveBk({ entry, boat, bk })}
+                          style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
+                          ↔️ Déplacer
+                        </button>
+                      </Row>
                       {!soldé && (
                         <Row gap={8} style={{ marginTop:6 }}>
                           <Btn small onClick={() => {
@@ -3931,13 +4006,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                             setPayFormAll(blankPayLines(reste));
                           }}>💳 Encaisser</Btn>
                           <StripeButton bk={bk} dateLabel={entry.label} dateId={entry.id} boatId={boat.id} small />
-                          {autresBateaux.map(ob => (
-                            <button key={ob.id} onClick={() => moveBooking(bk, boat, ob, entry)}
-                              title={`Transférer vers ${boatDisplay(ob.name)}`}
-                              style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"4px 9px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
-                              → {boatShort(ob.name)}
-                            </button>
-                          ))}
                           {bk.phone && (() => {
                             const tel = fullPhone(bk);
                             return (
@@ -4063,7 +4131,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
         {todayEntry.boats.map(boat => {
           const icon = boatIcon(boat.name);
           const dname = boatDisplay(boat.name);
-          const autresBateaux = todayEntry.boats.filter(b => b.id !== boat.id);
           const totalReste = boat.bookings.reduce((s,bk) => s + Math.max(0, bk.price - (bk.acompte_amount||0) - (bk.solde_encaisse||0)), 0);
 
           return (
@@ -4124,6 +4191,12 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                       </Row>
 
                       {/* Actions */}
+                      <Row gap={8} style={{ marginTop:6, flexWrap:"wrap" }}>
+                        <button onClick={() => setMoveBk({ entry: todayEntry, boat, bk })}
+                          style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"5px 11px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
+                          ↔️ Déplacer
+                        </button>
+                      </Row>
                       {!soldé && (
                         <Row gap={8} style={{ marginTop:6 }}>
                           <Btn small onClick={() => {
@@ -4133,13 +4206,6 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                             💳 Encaisser le solde
                           </Btn>
                           <StripeButton bk={bk} dateLabel={todayLabel} dateId={todayEntry.id} boatId={boat.id} small />
-                          {autresBateaux.map(ob => (
-                            <button key={ob.id} onClick={() => moveBooking(bk, boat, ob, todayEntry)}
-                              title={`Transférer vers ${boatDisplay(ob.name)}`}
-                              style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"5px 10px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
-                              → {boatShort(ob.name)}
-                            </button>
-                          ))}
                         </Row>
                       )}
 
@@ -4452,6 +4518,11 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
         {tab === "planning" && PlanningTab()}
         {tab === "exchange" && ExchangeTab()}
       </div>
+
+      {moveBk && (
+        <MoveDialog data={data} save={save} entry={moveBk.entry} boat={moveBk.boat} bk={moveBk.bk}
+          onClose={() => setMoveBk(null)} onDone={(m) => toast(m)} />
+      )}
 
       {notif && <div style={{ position:"fixed", bottom:22, left:"50%", transform:"translateX(-50%)", background:notif.ok?TEAL:CORAL, color:"#fff", padding:"10px 24px", borderRadius:28, fontSize:14, fontWeight:600, zIndex:9999, whiteSpace:"nowrap" }}>{notif.msg}</div>}
     </div>
@@ -5071,6 +5142,116 @@ function LoginScreen({ notice }) {
       <div style={{ color:"rgba(255,255,255,0.4)", fontSize:11, marginTop:20, textAlign:"center", lineHeight:1.6 }}>
         Accès réservé à l'équipe Panamax<br/>
         <span style={{ color:"rgba(255,255,255,0.3)", fontSize:10 }}>Version {APP_VERSION}</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Fenêtre de déplacement d'une réservation ───────────────────
+// Un seul écran pour changer de bateau, de date, ou les deux.
+function MoveDialog({ data, save, entry, boat, bk, onClose, onDone }) {
+  const dIni = dateFromLabel(entry.label) || new Date();
+  const iso  = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const [jour,  setJour]  = useState(iso(dIni));
+  const [nav,   setNav]   = useState(boat.name);
+  const [err,   setErr]   = useState("");
+
+  const pax     = (bk.adults || 0) + (bk.children || 0);
+  const cible   = jour ? labelFromDate(new Date(`${jour}T00:00:00`)) : null;
+  const inchange = cible === entry.label && nav === boat.name;
+
+  // Places restantes à la destination, pour guider le choix
+  const placesCible = (nomBateau) => {
+    if (!cible) return null;
+    const d = data.dates.find(x => dateKeyOf(x.label) === dateKeyOf(cible));
+    if (!d) return MAX_CAP;
+    const b = d.boats.find(x => x.name === nomBateau);
+    if (!b) return MAX_CAP;
+    if (b.closed) return -1;
+    const occupes = b.bookings.filter(x => x.id !== bk.id).reduce((s,x) => s + x.adults + x.children, 0);
+    return Math.max(0, MAX_CAP - occupes);
+  };
+
+  const valider = () => {
+    setErr("");
+    const r = moveReservation(data, {
+      bk, fromDateId: entry.id, fromBoatId: boat.id, toLabel: cible, toBoatName: nav,
+    });
+    if (r.error) { setErr(r.error); return; }
+    save(r.data);
+    onClose();
+    onDone?.(`${bk.name} déplacé vers ${boatDisplay(nav)} — ${cible}`);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", zIndex:500,
+                  display:"flex", alignItems:"center", justifyContent:"center", padding:16,
+                  fontFamily:"'Segoe UI', system-ui, sans-serif" }}>
+      <div style={{ background:"#fff", borderRadius:16, padding:22, maxWidth:380, width:"100%",
+                    boxSizing:"border-box", maxHeight:"90vh", overflowY:"auto" }}>
+        <Row style={{ marginBottom:14 }}>
+          <span style={{ fontWeight:800, color:TEAL, fontSize:16 }}>↔️ Déplacer la réservation</span>
+          <button onClick={onClose} style={{ marginLeft:"auto", background:"none", border:"none",
+                    cursor:"pointer", fontSize:22, color:"#bbb", lineHeight:1 }}>✕</button>
+        </Row>
+
+        <div style={{ background:"#F0F8FB", borderRadius:9, padding:"10px 13px", marginBottom:16,
+                      border:`1px solid ${TEAL}20` }}>
+          <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</div>
+          <div style={{ fontSize:12, color:"#888", marginTop:2 }}>
+            👥 {bk.children ? `${bk.adults} adulte(s) + ${bk.children} enfant(s)` : `${bk.adults} adulte(s)`}
+          </div>
+          <div style={{ fontSize:11.5, color:"#aaa", marginTop:4 }}>
+            Actuellement : {boatIcon(boat.name)} {boatDisplay(boat.name)} · {entry.label}
+          </div>
+        </div>
+
+        <div style={{ marginBottom:14 }}>
+          <Label>Nouvelle date</Label>
+          <input type="date" value={jour} onChange={e => { setJour(e.target.value); setErr(""); }} style={inputStyle} />
+          {cible && <div style={{ fontSize:11, color:"#888", marginTop:4 }}>{cible}</div>}
+        </div>
+
+        <div style={{ marginBottom:16 }}>
+          <Label>Bateau</Label>
+          <div style={{ display:"flex", flexDirection:"column", gap:6, marginTop:4 }}>
+            {BOATS.map(b => {
+              const libre = placesCible(b.name);
+              const ferme = libre === -1;
+              const trop  = !ferme && libre < pax;
+              return (
+                <button key={b.key} onClick={() => { if (!ferme) { setNav(b.name); setErr(""); } }}
+                  disabled={ferme}
+                  style={{ textAlign:"left", padding:"10px 13px", borderRadius:9, cursor: ferme ? "not-allowed" : "pointer",
+                           border:`2px solid ${nav === b.name ? TEAL : "#ddd"}`,
+                           background: nav === b.name ? `${TEAL}10` : "#fff", opacity: ferme ? 0.5 : 1 }}>
+                  <Row>
+                    <span style={{ fontWeight:700, fontSize:13, color: nav === b.name ? TEAL : DARK }}>
+                      {b.icon} {b.display}
+                    </span>
+                    <span style={{ marginLeft:"auto", fontSize:11.5,
+                                   color: ferme ? "#999" : trop ? CORAL : GREEN, fontWeight:600 }}>
+                      {ferme ? "🚫 fermé" : trop ? `${libre} place(s) — insuffisant` : `${libre} place(s)`}
+                    </span>
+                  </Row>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {err && (
+          <div style={{ background:"#FEF0EB", border:`1px solid ${CORAL}40`, borderRadius:8,
+                        padding:"9px 13px", marginBottom:12, fontSize:12.5, color:CORAL,
+                        fontWeight:600, lineHeight:1.5 }}>{err}</div>
+        )}
+
+        <Row gap={8}>
+          <Btn full onClick={valider} disabled={!cible || inchange} style={{ padding:12 }}>
+            {inchange ? "Aucun changement" : "Déplacer"}
+          </Btn>
+          <Btn variant="ghost" onClick={onClose}>Annuler</Btn>
+        </Row>
       </div>
     </div>
   );
