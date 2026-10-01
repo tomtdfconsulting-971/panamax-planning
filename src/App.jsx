@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.01-o";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.01-p";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -720,6 +720,13 @@ function ResellerPortal({ data, save, session }) {
 
   const reset = () => { setStep("cal"); setSelDate(null); setSelBoat(null); setForm(formVierge()); };
 
+  // Plusieurs sorties anticipées ici aussi : la fenêtre doit figurer dans celles
+  // d'où l'on peut déclencher un déplacement.
+  const dialogueDeplacement = moveBk ? (
+    <MoveDialog data={data} save={save} entry={moveBk.entry} boat={moveBk.boat} bk={moveBk.bk}
+      onClose={() => setMoveBk(null)} onDone={() => setMoveBk(null)} />
+  ) : null;
+
   // Build a lookup: "YYYY-M-D" → real date entry
   const byDay = {};
   for (const entry of data.dates) {
@@ -1163,7 +1170,7 @@ function ResellerPortal({ data, save, session }) {
                     <Btn small variant="ghost" onClick={() => setDelPending(null)}>Annuler</Btn>
                   </Row>
                 ) : (
-                  <Row gap={8}>
+                  <Row gap={8} style={{ flexWrap: "wrap" }}>
                     <Btn small onClick={() => { setEditingPending(p); setEditForm({ adults: p.adults, children: p.children, name: p.name, source: p.source, phone: p.phone, notes: p.notes || "", price: p.price }); setStep("edit-resa"); }}>✏️ Modifier</Btn>
                     <Btn small onClick={() => {
                       const e = data.dates.find(d => d.id === p.dateId);
@@ -1177,6 +1184,8 @@ function ResellerPortal({ data, save, session }) {
             );
           })}
         </div>
+
+        {dialogueDeplacement}
       </div>
     );
   }
@@ -1456,10 +1465,7 @@ function ResellerPortal({ data, save, session }) {
       </div>
       </>)}
 
-      {moveBk && (
-        <MoveDialog data={data} save={save} entry={moveBk.entry} boat={moveBk.boat} bk={moveBk.bk}
-          onClose={() => setMoveBk(null)} onDone={() => setStep("mes-resa")} />
-      )}
+      {dialogueDeplacement}
     </div>
   );
 }
@@ -2536,6 +2542,13 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   const [payDraft,  setPayDraft]  = useState([]);
   const [moveBk,    setMoveBk]    = useState(null);   // { entry, boat, bk } en cours de déplacement
 
+  // Ce composant comporte plusieurs sorties anticipées : la fenêtre doit être
+  // présente dans chacune, sinon elle ne s'affiche pas depuis le détail du jour.
+  const dialogueDeplacement = moveBk ? (
+    <MoveDialog data={data} save={save} entry={moveBk.entry} boat={moveBk.boat} bk={moveBk.bk}
+      onClose={() => setMoveBk(null)} onDone={(m) => notify(m)} />
+  ) : null;
+
   // Ouvre l'éditeur avec les montants déjà encaissés
   const openPay = (bk) => {
     setPayDraft(payLinesFrom(bk.paiements_solde));
@@ -2955,8 +2968,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   </div>
                 )}
 
-                {/* Actions modifier / supprimer */}
-                <div style={{ display:"flex", gap:8 }}>
+                {/* Actions modifier / déplacer / supprimer */}
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                   <button onClick={() => { setEditing({ dateId:entry.id, boatId:bk.boat.id, bkId:bk.id, form:{...bk} }); setAdminStep("edit-form"); }}
                     style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>✏️ Modifier</button>
                   <button onClick={() => { setPayBk(payBk === bk.id ? null : bk.id); if (payBk !== bk.id) openPay(bk); }}
@@ -3012,6 +3025,8 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
             );
           })}
         </div>
+
+        {dialogueDeplacement}
       </div>
     );
   }
@@ -3236,10 +3251,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
       </div>
       </>)}
 
-      {moveBk && (
-        <MoveDialog data={data} save={save} entry={moveBk.entry} boat={moveBk.boat} bk={moveBk.bk}
-          onClose={() => setMoveBk(null)} onDone={(m) => notify(m)} />
-      )}
+      {dialogueDeplacement}
     </div>
   );
 }
