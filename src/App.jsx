@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.07-q";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.07-r";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -4556,7 +4556,7 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
   const [notif,   setNotif]   = useState(null);
   const [adding,  setAdding]  = useState(false);
   const [editUid, setEditUid] = useState(null);
-  const [form,    setForm]    = useState({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"" });
+  const [form,    setForm]    = useState({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"", invite:true });
   const [editF,   setEditF]   = useState({ name:"", role:"", refKey:"" });
   const [busy,    setBusy]    = useState(false);
   const [mailUid, setMailUid] = useState(null);   // compte dont on change l'email
@@ -4649,11 +4649,13 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
 
     setBusy(false);
     if (d.success) {
-      toast(form.role === "commercial" || form.role === "skipper"
-        ? "Compte créé et rattaché ✓"
-        : "Compte créé ✓");
+      const base = (form.role === "commercial" || form.role === "skipper")
+        ? "Compte créé et rattaché" : "Compte créé";
+      if (d.invitation?.envoye)        toast(`${base} · invitation envoyée ✓`);
+      else if (d.invitation?.raison)   toast(`${base}, mais l'invitation n'est pas partie : ${d.invitation.raison}`, false);
+      else                             toast(`${base} ✓`);
       setAdding(false);
-      setForm({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"" });
+      setForm({ email:"", password:"", name:"", role:"commercial", refKey:"", skipperId:"", invite:true });
       refresh();
     } else toast(d.error || "Création impossible", false);
   };
@@ -4692,6 +4694,13 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
     setBusy(false);
     if (d.success) { toast("Adresse email modifiée ✓"); setMailUid(null); setNewMail(""); refresh(); }
     else toast(d.error || "Modification impossible", false);
+  };
+
+  // Renvoyer l'email d'invitation à un compte déjà créé
+  const renvoyerInvitation = async (uid, email) => {
+    const d = await call({ action:"invite", uid });
+    if (d.success) toast(`Invitation renvoyée à ${email}`);
+    else toast(d.error || "Envoi impossible", false);
   };
 
   // Aide : envoi d'un lien de réinitialisation (l'admin ne voit jamais le mot de passe)
@@ -4810,9 +4819,21 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
           <div style={{ marginBottom:16 }}>
             <FInput label="Mot de passe provisoire" value={form.password} onChange={e=>setForm(f=>({...f, password:e.target.value}))} placeholder="6 caractères minimum" />
             <div style={{ fontSize:11, color:"#888", marginTop:4 }}>
-              À communiquer de vive voix. La personne pourra le changer via « Mot de passe oublié ».
+              Sert de secours. Si l'invitation est envoyée, la personne choisit elle-même son mot de passe.
             </div>
           </div>
+
+          <label style={{ display:"flex", alignItems:"flex-start", gap:9, marginBottom:16, cursor:"pointer" }}>
+            <input type="checkbox" checked={form.invite}
+              onChange={e=>setForm(f=>({...f, invite:e.target.checked}))}
+              style={{ marginTop:2, width:17, height:17, cursor:"pointer", flexShrink:0 }} />
+            <span style={{ fontSize:12.5, color:DARK, lineHeight:1.5 }}>
+              Envoyer un email d'invitation
+              <span style={{ display:"block", fontSize:11, color:"#888", marginTop:2 }}>
+                La personne reçoit un lien pour définir son mot de passe et se connecter.
+              </span>
+            </span>
+          </label>
 
           <Row gap={8}>
             <Btn onClick={create} disabled={busy}>{busy ? "Création…" : "Créer le compte"}</Btn>
@@ -4942,6 +4963,10 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                       <button onClick={()=>sendResetMail(uid, u.email)}
                         style={{ background:"none", border:"none", color:"#999", cursor:"pointer", fontSize:11.5, textDecoration:"underline" }}>
                         envoyer un lien de réinitialisation de mot de passe
+                      </button>
+                      <button onClick={()=>renvoyerInvitation(uid, u.email)}
+                        style={{ background:"none", border:"none", color:"#999", cursor:"pointer", fontSize:11.5, textDecoration:"underline" }}>
+                        renvoyer l'invitation
                       </button>
                     </Row>
                   </div>
