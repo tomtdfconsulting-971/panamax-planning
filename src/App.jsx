@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.01-p";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.07-q";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -33,7 +33,7 @@ const STORE_KEY          = "panamax-v3";
 const STORE_KEY_SKIPPERS = "panamax-v3-skippers";
 
 // ── EmailJS config ─────────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = "service_h2mdqfs";
+const EMAILJS_SERVICE_ID  = "service_jqpq0dp";   // SMTP OVH — contact@panamaxexcursions.com
 const EMAILJS_TEMPLATE_ID = "template_2ywr08e";  // Mail de confirmation
 const EMAILJS_PUBLIC_KEY  = "RFeCuLmI9rtEy4Y0f";
 const TEAL      = "#1A5F7A";
