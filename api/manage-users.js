@@ -2,7 +2,46 @@
 // Toute action exige un jeton d'un utilisateur ayant le rôle « admin ».
 
 import { verifyIdToken, createAuthUser, loadUsers, saveUsers, FB_API_KEY } from './_firebase.js';
-import { adminDeleteUser, adminSetEmail, adminAvailable, adminDiagnostic } from './_admin.js';
+import { adminDeleteUser, adminSetEmail, adminAvailable, adminDiagnostic, adminResetLink } from './_admin.js';
+
+const EMAILJS_SERVICE  = process.env.EMAILJS_SERVICE_ID;
+const EMAILJS_INVITE   = process.env.EMAILJS_INVITE_TEMPLATE_ID;
+const EMAILJS_KEY      = process.env.EMAILJS_PUBLIC_KEY;
+const EMAILJS_PRIVATE  = process.env.EMAILJS_PRIVATE_KEY;
+
+const LIBELLE_ROLE = { admin: 'Administrateur', commercial: 'Commercial', skipper: 'Skipper' };
+
+// Email de bienvenue avec un lien pour définir son propre mot de passe.
+// Le mot de passe provisoire n'est jamais transmis par email.
+async function envoyerInvitation({ email, name, role }) {
+  if (!EMAILJS_SERVICE || !EMAILJS_INVITE || !EMAILJS_KEY) {
+    return { error: "Modèle d'invitation non configuré sur Vercel (EMAILJS_INVITE_TEMPLATE_ID)." };
+  }
+  const r = await adminResetLink(email);
+  if (r.error) return { error: r.error };
+
+  const payload = {
+    service_id:  EMAILJS_SERVICE,
+    template_id: EMAILJS_INVITE,
+    user_id:     EMAILJS_KEY,
+    template_params: {
+      to_email:      email,
+      to_name:       name || email,
+      role_label:    LIBELLE_ROLE[role] || role,
+      app_url:       'https://panamax-planning.vercel.app',
+      password_link: r.link,
+    },
+  };
+  if (EMAILJS_PRIVATE) payload.accessToken = EMAILJS_PRIVATE;
+
+  const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) return { error: `EmailJS : ${await res.text()}` };
+  return { success: true };
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -49,7 +88,14 @@ export default async function handler(req, res) {
           createdBy: caller.email,
         };
         const ok = await saveUsers(data);
-        return res.status(200).json({ success: ok, uid: created.uid });
+
+        // L'email est un confort : son échec ne doit pas annuler la création
+        let invitation = null;
+        if (req.body?.invite !== false) {
+          const env = await envoyerInvitation({ email: email.trim().toLowerCase(), name, role });
+          invitation = env.error ? { envoye: false, raison: env.error } : { envoye: true };
+        }
+        return res.status(200).json({ success: ok, uid: created.uid, invitation });
       }
 
       // ── Activer / désactiver ──────────────────────────────
@@ -96,6 +142,15 @@ export default async function handler(req, res) {
         data.users[uid].email = mail;
         const ok = await saveUsers(data);
         return res.status(200).json({ success: ok, ancien, nouveau: mail });
+      }
+
+      // ── Renvoyer l'email d'invitation ─────────────────────
+      case 'invite': {
+        if (!uid || !data.users[uid]) return res.status(404).json({ error: 'Compte introuvable.' });
+        const u = data.users[uid];
+        const env = await envoyerInvitation({ email: u.email, name: u.name, role: u.role });
+        if (env.error) return res.status(400).json({ error: env.error });
+        return res.status(200).json({ success: true, email: u.email });
       }
 
       // ── Envoyer un lien de réinitialisation par email ─────
