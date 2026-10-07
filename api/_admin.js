@@ -111,6 +111,18 @@ export async function adminSetEmail(uid, email) {
   }
 }
 
+// Génère un lien de définition de mot de passe, à envoyer nous-mêmes.
+// On n'envoie jamais le mot de passe par email : la personne choisit le sien.
+export async function adminResetLink(email) {
+  if (!ensureApp()) return indispo();
+  try {
+    const link = await getAuth().generatePasswordResetLink(email.trim().toLowerCase());
+    return { link };
+  } catch (e) {
+    return { error: messageClaire(e.message) };
+  }
+}
+
 // Diagnostic — ne révèle jamais la clé elle-même
 export function adminDiagnostic() {
   const ok = ensureApp();
