@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.09-u";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.09-v";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -176,6 +176,7 @@ async function sendConfirmationEmail(booking, dateLabel) {
       commercial,                                                   // « réalisée avec … »
       commercial_name:    nominatif ? ref.label : "Panamax Excursions",
       commercial_company: nominatif ? (ref.company || "")  : "",
+      commercial_email:   nominatif ? (ref.email   || "")  : "contact@panamaxexcursions.com",
       commercial_phone:   nominatif ? (ref.phone   || "")  : "",
       commercial_website: nominatif ? (ref.website || "")  : "",
       // Bloc de signature prêt à l'emploi, pour éviter les lignes vides
@@ -184,6 +185,7 @@ async function sendConfirmationEmail(booking, dateLabel) {
         nominatif
           ? [ref.label, ref.company].filter(Boolean).join(" – ")
           : "Panamax Excursions",
+        nominatif ? ref.email   : "contact@panamaxexcursions.com",
         nominatif ? ref.phone   : "",
         nominatif ? ref.website : "",
       ].filter(Boolean).join("\n"),
@@ -1882,7 +1884,7 @@ const PALETTE = ["#1A5F7A","#2471A3","#C0392B","#1E8449","#7D3C98","#8E44AD","#E
 
 function RevendeursTab({ sources, saveSources }) {
   const [editing, setEditing] = useState(null);
-  const VIERGE = { label: "", color: PALETTE[0], company: "", phone: "", website: "" };
+  const VIERGE = { label: "", color: PALETTE[0], company: "", email: "", phone: "", website: "" };
   const [form,    setForm]    = useState(VIERGE);
   const [adding,  setAdding]  = useState(false);
   const [newForm, setNewForm] = useState(VIERGE);
@@ -1902,6 +1904,7 @@ function RevendeursTab({ sources, saveSources }) {
     label:   f.label.trim(),
     color:   f.color,
     company: (f.company || "").trim(),
+    email:   (f.email   || "").trim().toLowerCase(),
     phone:   (f.phone   || "").trim(),
     website: (f.website || "").trim(),
   });
@@ -1975,6 +1978,10 @@ function RevendeursTab({ sources, saveSources }) {
                   onChange={e=>setNewForm(f=>({...f, company:e.target.value}))} />
               </div>
               <div style={{ marginBottom:10 }}>
+                <FInput label="Adresse email" type="email" value={newForm.email || ""} placeholder="prenom@exemple.com"
+                  onChange={e=>setNewForm(f=>({...f, email:e.target.value}))} />
+              </div>
+              <div style={{ marginBottom:10 }}>
                 <FInput label="Téléphone" value={newForm.phone || ""} placeholder="+590 690 00 00 00"
                   onChange={e=>setNewForm(f=>({...f, phone:e.target.value}))} />
               </div>
@@ -2024,6 +2031,10 @@ function RevendeursTab({ sources, saveSources }) {
                       <div style={{ marginBottom:10 }}>
                         <FInput label="Société" value={form.company || ""} placeholder="ex: Caraïbes Évasion"
                           onChange={e=>setForm(f=>({...f, company:e.target.value}))} />
+                      </div>
+                      <div style={{ marginBottom:10 }}>
+                        <FInput label="Adresse email" type="email" value={form.email || ""} placeholder="prenom@exemple.com"
+                          onChange={e=>setForm(f=>({...f, email:e.target.value}))} />
                       </div>
                       <div style={{ marginBottom:10 }}>
                         <FInput label="Téléphone" value={form.phone || ""} placeholder="+590 690 00 00 00"
