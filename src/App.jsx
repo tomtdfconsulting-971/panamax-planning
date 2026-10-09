@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.07-r";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.09-s";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -705,6 +705,7 @@ function ResellerPortal({ data, save, session }) {
   const [form,          setForm]          = useState(formVierge);
   const [editingPending, setEditingPending] = useState(null);
   const [moveBk,         setMoveBk]         = useState(null);   // réservation en cours de déplacement
+  const [derniereResa,   setDerniereResa]   = useState(null);   // pour la confirmation WhatsApp
   const [editForm,       setEditForm]      = useState({ ...BLANK });
   const [delPending,     setDelPending]    = useState(null);
   // Un commercial est identifié par son compte et ne peut pas en changer ;
@@ -809,6 +810,7 @@ function ResellerPortal({ data, save, session }) {
     sendConfirmationEmail({ ...form, price: bkPrice }, selDate?.label || "");
     // Notify admin via Telegram
     sendTelegramNotif(`🆕 Nouvelle réservation\n📅 ${selDate?.label || ""}\n👤 ${form.name}\n👥 ${form.adults} adulte(s)${form.children ? ` + ${form.children} enfant(s)` : ""}\n💰 ${bkPrice}€${form.acompte_amount > 0 ? ` · Acompte ${form.acompte_amount}€` : ""}\n👥 Via : ${SOURCES[form.source]?.label || form.source || "?"}`);
+    setDerniereResa({ bk: newBooking, label: selDate?.label || "" });
     setStep("ok");
   };
 
@@ -827,6 +829,14 @@ function ResellerPortal({ data, save, session }) {
           {form.phone && <div>📞 {form.phone}</div>}
           <div style={{ color: TEAL, fontWeight: 700 }}>💰 {fmtEur(form.adults * P_AD + form.children * P_CH)}</div>
         </div>
+        {derniereResa?.bk?.phone && (
+          <div style={{ marginBottom: 10 }}>
+            <WhatsAppConfirmButton bk={derniereResa.bk} dateLabel={derniereResa.label} full />
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 6, textAlign: "center", lineHeight: 1.5 }}>
+              WhatsApp s'ouvre avec le message prêt — il reste à appuyer sur Envoyer.
+            </div>
+          </div>
+        )}
         <Btn full onClick={reset} style={{ padding: 14, fontSize: 15 }}>← Retour au planning</Btn>
       </div>
     </div>
@@ -1177,6 +1187,7 @@ function ResellerPortal({ data, save, session }) {
                       const b = e?.boats.find(x => x.id === p.boatId);
                       if (e && b) setMoveBk({ entry: e, boat: b, bk: p });
                     }}>↔️ Déplacer</Btn>
+                    <WhatsAppConfirmButton bk={p} dateLabel={p.dateLabel || ""} small />
                     <Btn small variant="danger" onClick={() => setDelPending(p.id)}>✕ Annuler la demande</Btn>
                   </Row>
                 )}
@@ -2976,6 +2987,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                     style={{ background:"#FFF8EE", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:ORANGE, fontWeight:600 }}>💳 Encaissement</button>
                   <button onClick={() => setMoveBk({ entry, boat: bk.boat, bk })}
                     style={{ background:"#EBF7FA", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:TEAL, fontWeight:600 }}>↔️ Déplacer</button>
+                  <WhatsAppConfirmButton bk={bk} dateLabel={entry.label} small />
                   <button onClick={() => setDelBk(bk.id)}
                     style={{ background:"#FEF0EB", border:"none", borderRadius:7, padding:"7px 14px", cursor:"pointer", fontSize:12, color:CORAL, fontWeight:600 }}>🗑 Supprimer</button>
                 </div>
@@ -4010,6 +4022,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
                           ↔️ Déplacer
                         </button>
+                        <WhatsAppConfirmButton bk={bk} dateLabel={entry.label} small />
                       </Row>
                       {!soldé && (
                         <Row gap={8} style={{ marginTop:6 }}>
@@ -4208,6 +4221,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                           style={{ background:"#EBF7FA", border:`1px solid ${TEAL}40`, borderRadius:6, padding:"5px 11px", cursor:"pointer", fontSize:11, color:TEAL, fontWeight:600 }}>
                           ↔️ Déplacer
                         </button>
+                        <WhatsAppConfirmButton bk={bk} dateLabel={todayLabel} small />
                       </Row>
                       {!soldé && (
                         <Row gap={8} style={{ marginTop:6 }}>
@@ -5291,6 +5305,65 @@ function MoveDialog({ data, save, entry, boat, bk, onClose, onDone }) {
         </Row>
       </div>
     </div>
+  );
+}
+
+// ── Confirmation WhatsApp ──────────────────────────────────────
+// Ouvre WhatsApp avec un message prêt à envoyer. L'envoi reste manuel :
+// c'est ce qui rend le procédé gratuit et sans validation Meta.
+const MOIS_LONGS_WA = ["janvier","février","mars","avril","mai","juin",
+                       "juillet","août","septembre","octobre","novembre","décembre"];
+
+function messageConfirmationWA(bk, dateLabel) {
+  const d = dateFromLabel(dateLabel);
+  const quand = d
+    ? `${DAYS_LONG[d.getDay()]} ${d.getDate()} ${MOIS_LONGS_WA[d.getMonth()]}`
+    : dateLabel;
+
+  const ad  = bk.adults || 0, en = bk.children || 0;
+  const qui = [
+    ad ? `${ad} adulte${ad > 1 ? "s" : ""}` : null,
+    en ? `${en} enfant${en > 1 ? "s" : ""}` : null,
+  ].filter(Boolean).join(" + ");
+
+  const acompte = (bk.acompte_amount || 0) + (bk.solde_encaisse || 0);
+  const reste   = Math.max(0, (bk.price || 0) - acompte);
+  const argent  = reste === 0
+    ? `💰 Total ${fmtEur(bk.price || 0)} — intégralement réglé`
+    : acompte > 0
+      ? `💰 Total ${fmtEur(bk.price || 0)} — acompte versé ${fmtEur(acompte)} — reste ${fmtEur(reste)} à régler à l'embarquement`
+      : `💰 Total ${fmtEur(bk.price || 0)} à régler à l'embarquement`;
+
+  // Signature : le référent qui a pris la réservation. Pour une commande
+  // web ou une origine non nominative, on signe au nom de l'équipe.
+  const ref  = SOURCES[bk.source]?.label;
+  const sign = (!ref || ["woo", "autre"].includes(bk.source)) ? "L'équipe Panamax Excursions" : ref;
+
+  return [
+    `Bonjour ${bk.name || ""} 👋`.trim(),
+    `Votre réservation dans le Grand Cul-de-Sac Marin avec Panamax Excursions est confirmée ✅`,
+    ``,
+    `📅 ${quand}`,
+    `👥 ${qui || "—"}`,
+    argent,
+    ``,
+    `À très bientôt en mer ! 🐠`,
+    sign,
+  ].join("\n");
+}
+
+function WhatsAppConfirmButton({ bk, dateLabel, small, full }) {
+  const num = fullPhone(bk);
+  if (!num) return null;
+  const lien = `https://wa.me/${num.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(messageConfirmationWA(bk, dateLabel))}`;
+  return (
+    <a href={lien} target="_blank" rel="noreferrer"
+      style={{ background:"#25D366", color:"#fff", borderRadius: small ? 6 : 10,
+               padding: small ? "5px 11px" : "11px 18px", textDecoration:"none",
+               fontSize: small ? 11.5 : 14, fontWeight:700, display:full ? "block" : "inline-block",
+               textAlign:"center", boxSizing:"border-box", width: full ? "100%" : undefined }}>
+      💬 Confirmer par WhatsApp
+    </a>
   );
 }
 
