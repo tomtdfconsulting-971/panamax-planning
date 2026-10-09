@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.09-s";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.09-t";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -152,6 +152,12 @@ async function sendConfirmationEmail(booking, dateLabel) {
     const ligneAcompte = acompte > 0  ? `✅ Acompte versé : ${acompte}€`         : "✅ Acompte versé : 0€";
     const ligneReste   = `⏳ Reste à régler le jour J : ${reste}€`;
 
+    // Coordonnées du référent, pour personnaliser l'email et sa signature.
+    // Sans référent nominatif (commande web), on signe au nom de l'équipe.
+    const ref       = SOURCES[booking.source] || {};
+    const nominatif = ref.label && !["woo", "autre"].includes(booking.source);
+    const commercial = nominatif ? ref.label : "l'équipe Panamax Excursions";
+
     const templateParams = {
       to_name:    booking.name,
       to_email:   booking.email,
@@ -164,6 +170,21 @@ async function sendConfirmationEmail(booking, dateLabel) {
       notes:      booking.notes ? `📝 ${booking.notes}` : "",
       pdf_url:    "https://panamax-planning.vercel.app/itineraire-panamax.pdf",
       reply_to:   "contact@panamaxexcursions.com",
+
+      commercial,                                                   // « réalisée avec … »
+      commercial_name:    nominatif ? ref.label : "Panamax Excursions",
+      commercial_company: nominatif ? (ref.company || "")  : "",
+      commercial_phone:   nominatif ? (ref.phone   || "")  : "",
+      commercial_website: nominatif ? (ref.website || "")  : "",
+      // Bloc de signature prêt à l'emploi, pour éviter les lignes vides
+      // quand une coordonnée n'est pas renseignée
+      signature: [
+        nominatif
+          ? [ref.label, ref.company].filter(Boolean).join(" – ")
+          : "Panamax Excursions",
+        nominatif ? ref.phone   : "",
+        nominatif ? ref.website : "",
+      ].filter(Boolean).join("\n"),
     };
 
     const response = await fetch(`https://api.emailjs.com/api/v1.0/email/send`, {
@@ -1859,28 +1880,41 @@ const PALETTE = ["#1A5F7A","#2471A3","#C0392B","#1E8449","#7D3C98","#8E44AD","#E
 
 function RevendeursTab({ sources, saveSources }) {
   const [editing, setEditing] = useState(null);
-  const [form,    setForm]    = useState({ label: "", color: PALETTE[0] });
+  const VIERGE = { label: "", color: PALETTE[0], company: "", phone: "", website: "" };
+  const [form,    setForm]    = useState(VIERGE);
   const [adding,  setAdding]  = useState(false);
-  const [newForm, setNewForm] = useState({ label: "", color: PALETTE[0] });
+  const [newForm, setNewForm] = useState(VIERGE);
   const [delKey,  setDelKey]  = useState(null);
   const [notif,   setNotif]   = useState(null);
 
   const toast = (msg, ok=true) => { setNotif({msg,ok}); setTimeout(()=>setNotif(null),3000); };
   const FIXED = ["woo","autre"];
 
-  const startEdit = (key) => { setEditing(key); setForm({ label: sources[key].label, color: sources[key].color }); };
+  const startEdit = (key) => {
+    setEditing(key);
+    setForm({ ...VIERGE, ...sources[key] });
+  };
+
+  // Les coordonnées personnalisent l'email de confirmation envoyé au client
+  const propre = (f) => ({
+    label:   f.label.trim(),
+    color:   f.color,
+    company: (f.company || "").trim(),
+    phone:   (f.phone   || "").trim(),
+    website: (f.website || "").trim(),
+  });
 
   const saveEdit = () => {
     if (!form.label.trim()) return;
-    saveSources({ ...sources, [editing]: { label: form.label.trim(), color: form.color } });
+    saveSources({ ...sources, [editing]: propre(form) });
     setEditing(null); toast("Référent(e) modifié(e) ✓");
   };
 
   const saveAdd = () => {
     if (!newForm.label.trim()) return;
     const key = newForm.label.trim().toLowerCase().replace(/[^a-z0-9]/g,"_") + "_" + uid();
-    saveSources({ ...sources, [key]: { label: newForm.label.trim(), color: newForm.color } });
-    setAdding(false); setNewForm({ label:"", color:PALETTE[0] }); toast("Référent(e) ajouté(e) ✓");
+    saveSources({ ...sources, [key]: propre(newForm) });
+    setAdding(false); setNewForm(VIERGE); toast("Référent(e) ajouté(e) ✓");
   };
 
   const doDelete = (key) => {
@@ -1927,9 +1961,29 @@ function RevendeursTab({ sources, saveSources }) {
               <Label>Couleur du badge</Label>
               <ColorPicker value={newForm.color} onChange={c=>setNewForm(f=>({...f,color:c}))} />
             </div>
+            <div style={{ borderTop:"1px solid #e0eef3", paddingTop:12, marginBottom:12 }}>
+              <div style={{ fontSize:11, fontWeight:700, color:"#888", textTransform:"uppercase", letterSpacing:0.6, marginBottom:4 }}>
+                Coordonnées
+              </div>
+              <div style={{ fontSize:11, color:"#999", marginBottom:10, lineHeight:1.5 }}>
+                Reprises en signature de l'email de confirmation envoyé aux clients. Facultatives.
+              </div>
+              <div style={{ marginBottom:10 }}>
+                <FInput label="Société" value={newForm.company || ""} placeholder="ex: Caraïbes Évasion"
+                  onChange={e=>setNewForm(f=>({...f, company:e.target.value}))} />
+              </div>
+              <div style={{ marginBottom:10 }}>
+                <FInput label="Téléphone" value={newForm.phone || ""} placeholder="+590 690 00 00 00"
+                  onChange={e=>setNewForm(f=>({...f, phone:e.target.value}))} />
+              </div>
+              <div>
+                <FInput label="Site internet" value={newForm.website || ""} placeholder="www.exemple.com"
+                  onChange={e=>setNewForm(f=>({...f, website:e.target.value}))} />
+              </div>
+            </div>
             <Row gap={8}>
               <Btn onClick={saveAdd} disabled={!newForm.label.trim()}>Enregistrer</Btn>
-              <Btn variant="ghost" onClick={()=>{ setAdding(false); setNewForm({label:"",color:PALETTE[0]}); }}>Annuler</Btn>
+              <Btn variant="ghost" onClick={()=>{ setAdding(false); setNewForm(VIERGE); }}>Annuler</Btn>
               <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8, fontSize:13, color:"#666" }}>
                 Aperçu : {previewLabel(newForm.label, newForm.color)}
               </div>
@@ -1957,6 +2011,26 @@ function RevendeursTab({ sources, saveSources }) {
                     <div style={{ marginBottom:14 }}>
                       <Label>Couleur du badge</Label>
                       <ColorPicker value={form.color} onChange={c=>setForm(f=>({...f,color:c}))} />
+                    </div>
+                    <div style={{ borderTop:"1px solid #dceaf0", paddingTop:12, marginBottom:12 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:"#888", textTransform:"uppercase", letterSpacing:0.6, marginBottom:4 }}>
+                        Coordonnées
+                      </div>
+                      <div style={{ fontSize:11, color:"#999", marginBottom:10, lineHeight:1.5 }}>
+                        Reprises en signature de l'email de confirmation. Facultatives.
+                      </div>
+                      <div style={{ marginBottom:10 }}>
+                        <FInput label="Société" value={form.company || ""} placeholder="ex: Caraïbes Évasion"
+                          onChange={e=>setForm(f=>({...f, company:e.target.value}))} />
+                      </div>
+                      <div style={{ marginBottom:10 }}>
+                        <FInput label="Téléphone" value={form.phone || ""} placeholder="+590 690 00 00 00"
+                          onChange={e=>setForm(f=>({...f, phone:e.target.value}))} />
+                      </div>
+                      <div>
+                        <FInput label="Site internet" value={form.website || ""} placeholder="www.exemple.com"
+                          onChange={e=>setForm(f=>({...f, website:e.target.value}))} />
+                      </div>
                     </div>
                     <Row gap={8}>
                       <Btn small onClick={saveEdit} disabled={!form.label.trim()}>Enregistrer</Btn>
