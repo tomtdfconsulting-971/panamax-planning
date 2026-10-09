@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.09-t";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.09-u";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -148,9 +148,11 @@ async function sendConfirmationEmail(booking, dateLabel) {
     if (children > 0) passagers += ` + ${children} enfant${children > 1 ? "s" : ""}`;
 
     // Build price detail lines
-    const ligneRemise  = discount > 0 ? `🎁 Remise commerciale : -${discount}€` : "";
-    const ligneAcompte = acompte > 0  ? `✅ Acompte versé : ${acompte}€`         : "✅ Acompte versé : 0€";
-    const ligneReste   = `⏳ Reste à régler le jour J : ${reste}€`;
+    // Montants bruts : la mise en forme appartient au modèle EmailJS.
+    // Seule la remise reste une ligne complète, car elle disparaît si nulle.
+    const ligneRemise  = discount > 0 ? `🎁 Remise commerciale : -${discount} €` : "";
+    const ligneAcompte = `${acompte} €`;
+    const ligneReste   = `${reste} €`;
 
     // Coordonnées du référent, pour personnaliser l'email et sa signature.
     // Sans référent nominatif (commande web), on signe au nom de l'équipe.
