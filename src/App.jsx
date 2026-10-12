@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.12-x";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.12-z";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -5421,11 +5421,13 @@ function messageConfirmationWA(bk, dateLabel) {
 
   const acompte = (bk.acompte_amount || 0) + (bk.solde_encaisse || 0);
   const reste   = Math.max(0, (bk.price || 0) - acompte);
+  // Les moyens de paiement ne sont rappelés que s'il reste à payer
+  const MOYENS  = "(CB, espèce, chèques vacances)";
   const argent  = reste === 0
     ? `💰 Total ${fmtEur(bk.price || 0)} — intégralement réglé`
     : acompte > 0
-      ? `💰 Total ${fmtEur(bk.price || 0)} — acompte versé ${fmtEur(acompte)} — reste ${fmtEur(reste)} à régler à l'embarquement`
-      : `💰 Total ${fmtEur(bk.price || 0)} à régler à l'embarquement`;
+      ? `💰 Total ${fmtEur(bk.price || 0)} — acompte versé ${fmtEur(acompte)} — reste ${fmtEur(reste)} à régler à l'embarquement ${MOYENS}`
+      : `💰 Total ${fmtEur(bk.price || 0)} à régler à l'embarquement ${MOYENS}`;
 
   return [
     `Bonjour ${bk.name || ""},`.trim(),
