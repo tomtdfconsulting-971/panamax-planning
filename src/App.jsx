@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.09-v";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.12-x";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -181,14 +181,7 @@ async function sendConfirmationEmail(booking, dateLabel) {
       commercial_website: nominatif ? (ref.website || "")  : "",
       // Bloc de signature prêt à l'emploi, pour éviter les lignes vides
       // quand une coordonnée n'est pas renseignée
-      signature: [
-        nominatif
-          ? [ref.label, ref.company].filter(Boolean).join(" – ")
-          : "Panamax Excursions",
-        nominatif ? ref.email   : "contact@panamaxexcursions.com",
-        nominatif ? ref.phone   : "",
-        nominatif ? ref.website : "",
-      ].filter(Boolean).join("\n"),
+      signature: signatureReferent(booking.source),
     };
 
     const response = await fetch(`https://api.emailjs.com/api/v1.0/email/send`, {
@@ -5398,6 +5391,19 @@ function MoveDialog({ data, save, entry, boat, bk, onClose, onDone }) {
 // ── Confirmation WhatsApp ──────────────────────────────────────
 // Ouvre WhatsApp avec un message prêt à envoyer. L'envoi reste manuel :
 // c'est ce qui rend le procédé gratuit et sans validation Meta.
+// Signature du référent, partagée par l'email de confirmation et WhatsApp.
+// Seules les coordonnées renseignées apparaissent : pas de ligne vide.
+function signatureReferent(source) {
+  const ref       = SOURCES[source] || {};
+  const nominatif = ref.label && !["woo", "autre"].includes(source);
+  return [
+    nominatif ? [ref.label, ref.company].filter(Boolean).join(" – ") : "Panamax Excursions",
+    nominatif ? ref.email   : "contact@panamaxexcursions.com",
+    nominatif ? ref.phone   : "",
+    nominatif ? ref.website : "",
+  ].filter(Boolean).join("\n");
+}
+
 const MOIS_LONGS_WA = ["janvier","février","mars","avril","mai","juin",
                        "juillet","août","septembre","octobre","novembre","décembre"];
 
@@ -5421,21 +5427,23 @@ function messageConfirmationWA(bk, dateLabel) {
       ? `💰 Total ${fmtEur(bk.price || 0)} — acompte versé ${fmtEur(acompte)} — reste ${fmtEur(reste)} à régler à l'embarquement`
       : `💰 Total ${fmtEur(bk.price || 0)} à régler à l'embarquement`;
 
-  // Signature : le référent qui a pris la réservation. Pour une commande
-  // web ou une origine non nominative, on signe au nom de l'équipe.
-  const ref  = SOURCES[bk.source]?.label;
-  const sign = (!ref || ["woo", "autre"].includes(bk.source)) ? "L'équipe Panamax Excursions" : ref;
-
   return [
-    `Bonjour ${bk.name || ""} 👋`.trim(),
-    `Votre réservation dans le Grand Cul-de-Sac Marin avec Panamax Excursions est confirmée ✅`,
+    `Bonjour ${bk.name || ""},`.trim(),
+    `Votre réservation pour l'excursion dans le Grand Cul-de-Sac Marin au départ de Gosier avec Panamax est confirmée ✅`,
     ``,
     `📅 ${quand}`,
     `👥 ${qui || "—"}`,
     argent,
     ``,
-    `À très bientôt en mer ! 🐠`,
-    sign,
+    `Le rendez-vous est à 8h15 au bateau, pour un départ à 8h30.`,
+    ``,
+    `Pour trouver le bateau, recherchez « Panamax Excursions » dans votre GPS. Vous trouverez à 100 m du bateau un grand parking gratuit.`,
+    ``,
+    `Voici la géolocalisation du bateau :`,
+    `https://maps.app.goo.gl/RNvdPy76ubQxyq8V9?g_st=ic`,
+    ``,
+    `À très bientôt ! 🐠☀️🏝️🚤`,
+    signatureReferent(bk.source),
   ].join("\n");
 }
 
