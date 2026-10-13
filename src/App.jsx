@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.12-z";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.13-aa";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -165,7 +165,7 @@ async function sendConfirmationEmail(booking, dateLabel) {
       to_email:   booking.email,
       date:       dateLabel || "À confirmer",
       passagers,
-      montant:    `${price}€`,
+      montant:    `${price + discount}€`,   // brut : la ligne remise vient juste après
       remise:     ligneRemise,
       acompte:    ligneAcompte,
       reste:      ligneReste,
@@ -242,10 +242,12 @@ function splitPhone(raw) {
   // Numéro local : indicatif français par défaut, comme avant
   return { phone_prefix: "+33", phone: digits };
 }
-const boatPax  = b  => b.bookings.reduce((s, bk) => s + bk.adults + bk.children, 0);
-const boatRev  = b  => b.bookings.reduce((s, bk) => s + bk.price, 0);
+// Tolérants à une fiche incomplète : une seule donnée abîmée ne doit pas
+// faire tomber tout un calendrier.
+const boatPax  = b  => (b?.bookings || []).reduce((s, bk) => s + (bk.adults || 0) + (bk.children || 0), 0);
+const boatRev  = b  => (b?.bookings || []).reduce((s, bk) => s + (bk.price   || 0), 0);
 const fmtEur   = n  => n.toLocaleString("fr") + "€";
-const spots    = b  => b.closed ? 0 : Math.max(0, MAX_CAP - boatPax(b));
+const spots    = b  => b?.closed ? 0 : Math.max(0, MAX_CAP - boatPax(b));
 const pct      = b  => Math.min((boatPax(b) / MAX_CAP) * 100, 100);
 const barColor = b  => pct(b) >= 100 ? RED : pct(b) > 70 ? ORANGE : GREEN;
 
@@ -301,7 +303,8 @@ function ensureFleet(dates) {
   const aujourdhui = new Date(); aujourdhui.setHours(0, 0, 0, 0);
   let ajoutes = 0;
   const out = dates.map(e => {
-    if (!e || !Array.isArray(e.boats)) return e;
+    if (!e) return e;
+    if (!Array.isArray(e.boats)) { ajoutes += BOATS.length; return { ...e, boats: freshBoats() }; }
     const d = dateFromLabel(e.label);
     if (d && d < aujourdhui) return e;
     const manquants = BOATS.filter(b => !e.boats.some(x => x?.name === b.name));
@@ -317,7 +320,7 @@ function ensureFleet(dates) {
 // y ajoute le bateau manquant, et refuse si la capacité est dépassée.
 function moveReservation(data, { bk, fromDateId, fromBoatId, toLabel, toBoatName }) {
   const pax = (bk.adults || 0) + (bk.children || 0);
-  let dates = data.dates.map(d => ({ ...d, boats: d.boats.map(b => ({ ...b, bookings: [...b.bookings] })) }));
+  let dates = data.dates.map(d => ({ ...d, boats: (d.boats || []).map(b => ({ ...b, bookings: [...b.bookings] })) }));
 
   // Date d'arrivée : réutiliser celle qui existe, sinon la créer
   const cleCible = dateKeyOf(toLabel);
@@ -346,7 +349,7 @@ function moveReservation(data, { bk, fromDateId, fromBoatId, toLabel, toBoatName
 
   // Retirer de l'emplacement d'origine
   let trouve = false;
-  dates = dates.map(d => ({ ...d, boats: d.boats.map(b => {
+  dates = dates.map(d => ({ ...d, boats: (d.boats || []).map(b => {
     if (b.bookings.some(x => x.id === bk.id)) trouve = true;
     return { ...b, bookings: b.bookings.filter(x => x.id !== bk.id) };
   })}));
@@ -360,6 +363,27 @@ function moveReservation(data, { bk, fromDateId, fromBoatId, toLabel, toBoatName
       : b);
 
   return { data: { ...data, dates } };
+}
+
+// Répare les réservations enregistrées avant la correction du calcul :
+// leur prix était resté brut, la remise n'étant jamais déduite.
+function fixRemises(dates) {
+  let corrigees = 0;
+  const out = dates.map(d => {
+    if (!d || !Array.isArray(d.boats)) return d;
+    return { ...d, boats: (d.boats || []).map(b => ({
+      ...b, bookings: (b.bookings || []).map(bk => {
+        const remise = bk.discount || 0;
+        if (remise <= 0) return bk;
+        const brut = (bk.adults || 0) * P_AD + (bk.children || 0) * P_CH;
+        // Prix encore égal au brut : la remise n'a pas été appliquée
+        if (bk.price !== brut) return bk;
+        corrigees++;
+        return { ...bk, price: Math.max(0, brut - remise) };
+      })
+    }))};
+  });
+  return { dates: out, corrigees };
 }
 
 function mergeDuplicateDates(dates) {
@@ -752,7 +776,7 @@ function ResellerPortal({ data, save, session }) {
     const d = dateFromLabel(entry.label);
     if (!d) continue;
     const _k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const _n = e => e.boats.reduce((s, b) => s + b.bookings.length, 0);
+    const _n = e => (e.boats || []).reduce((s, b) => s + (b.bookings || []).length, 0);
     if (!byDay[_k] || _n(entry) > _n(byDay[_k])) byDay[_k] = entry;
   }
 
@@ -808,7 +832,7 @@ function ResellerPortal({ data, save, session }) {
     const newBooking = {
       ...form,
       id: uid(), dateId, boatId,
-      price: form.adults * P_AD + form.children * P_CH,
+      price: calcTotal(form),            // toujours net de remise
       status: "confirmed",
       ts: Date.now(),
     };
@@ -816,7 +840,7 @@ function ResellerPortal({ data, save, session }) {
     nextData = {
       ...nextData,
       dates: nextData.dates.map(d => d.id !== dateId ? d : {
-        ...d, boats: d.boats.map(b => b.id !== boatId ? b : {
+        ...d, boats: (d.boats || []).map(b => b.id !== boatId ? b : {
           ...b, bookings: [...b.bookings, newBooking]
         })
       })
@@ -870,7 +894,7 @@ function ResellerPortal({ data, save, session }) {
         <p style={{ fontSize: 12, color: "#aaa", margin: "0 0 2px", textTransform: "uppercase", letterSpacing: 1 }}>Date sélectionnée</p>
         <h2 style={{ margin: "0 0 22px", color: DARK }}>📅 {selDate.label}</h2>
         <Grid cols="1fr" gap={14}>
-          {selDate.boats.map(boat => {
+          {(selDate.boats||[]).map(boat => {
             const r = spots(boat);
             const p = pct(boat);
             const full = r <= 0;
@@ -906,14 +930,14 @@ function ResellerPortal({ data, save, session }) {
 
         {/* ── Réservations du jour par bateau ── */}
         {(() => {
-          const hasAny = selDate.boats.some(b => b.bookings.length > 0);
+          const hasAny = (selDate.boats||[]).some(b => (b.bookings||[]).length > 0);
           if (!hasAny) return null;
           return (
             <div style={{ marginTop: 24, borderTop: "1px solid #e8eef3", paddingTop: 20 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: "#888", textTransform: "uppercase", letterSpacing: 1, marginBottom: 14 }}>
                 Réservations du jour
               </div>
-              {selDate.boats.map(boat => {
+              {(selDate.boats||[]).map(boat => {
                 if (boat.bookings.length === 0) return null;
                 const icon = boatIcon(boat.name);
                 const dname = boatDisplay(boat.name);
@@ -997,9 +1021,9 @@ function ResellerPortal({ data, save, session }) {
             return (<>
               <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
                 <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={form.adults} max={maxAd}
-                  onChange={v => setForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
+                  onChange={v => setForm(f => ({ ...f, adults: v, price: calcTotal({ ...f, adults: v }) }))} />
                 <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={form.children} max={maxCh}
-                  onChange={v => setForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
+                  onChange={v => setForm(f => ({ ...f, children: v, price: calcTotal({ ...f, children: v }) }))} />
               </Grid>
               <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
                 {total >= libre
@@ -1044,7 +1068,7 @@ function ResellerPortal({ data, save, session }) {
           <div style={{ marginBottom: 14 }}>
             <Label>Remise commerciale (€)</Label>
             <input type="number" onFocus={e => e.target.select()} min="0" value={form.discount || ""}
-              onChange={e => { const d=Math.max(0,+e.target.value); setForm(f=>({...f,discount:d,price:Math.max(0,f.adults*P_AD+f.children*P_CH-d)})); }}
+              onChange={e => { const d=Math.max(0,+e.target.value); setForm(f=>({...f,discount:d,price:calcTotal({...f,discount:d})})); }}
               style={inputStyle} placeholder="0" />
           </div>
           <div style={{ marginBottom: 14 }}>
@@ -1116,7 +1140,7 @@ function ResellerPortal({ data, save, session }) {
     const pending = data.dates.flatMap(date => {
       const d = dateFromLabel(date.label);
       if (!d || d < todayMidnight) return []; // Ignorer les dates passées
-      return date.boats.flatMap(boat =>
+      return (date.boats || []).flatMap(boat =>
         boat.bookings
           .filter(bk => bk.source === identity)
           .map(bk => ({ ...bk, dateId: date.id, boatId: boat.id, dateLabel: date.label, boatName: boat.name }))
@@ -1127,7 +1151,7 @@ function ResellerPortal({ data, save, session }) {
     const totalAcomptesAnnee = data.dates.flatMap(date => {
       const d = dateFromLabel(date.label);
       if (!d || d.getFullYear() !== currentYear) return [];
-      return date.boats.flatMap(boat =>
+      return (date.boats || []).flatMap(boat =>
         boat.bookings.filter(bk => bk.source === identity).map(bk => bk.acompte_amount || 0)
       );
     }).reduce((s, v) => s + v, 0);
@@ -1194,7 +1218,7 @@ function ResellerPortal({ data, save, session }) {
                 </div>
                 {isPendingDel ? (
                   <Row gap={8}>
-                    <Btn small variant="danger" onClick={() => { save({ ...data, dates: data.dates.map(d => d.id !== p.dateId ? d : { ...d, boats: d.boats.map(b => b.id !== p.boatId ? b : { ...b, bookings: b.bookings.filter(bk => bk.id !== p.id) }) }) }); setDelPending(null); }}>Confirmer l'annulation</Btn>
+                    <Btn small variant="danger" onClick={() => { save({ ...data, dates: data.dates.map(d => d.id !== p.dateId ? d : { ...d, boats: (d.boats || []).map(b => b.id !== p.boatId ? b : { ...b, bookings: b.bookings.filter(bk => bk.id !== p.id) }) }) }); setDelPending(null); }}>Confirmer l'annulation</Btn>
                     <Btn small variant="ghost" onClick={() => setDelPending(null)}>Annuler</Btn>
                   </Row>
                 ) : (
@@ -1238,7 +1262,7 @@ function ResellerPortal({ data, save, session }) {
 
       const updated = { ...editingPending, ...editForm, price: editForm.adults * P_AD + editForm.children * P_CH };
       save({ ...data, dates: data.dates.map(d => d.id !== editingPending.dateId ? d : {
-        ...d, boats: d.boats.map(b => b.id !== editingPending.boatId ? b : {
+        ...d, boats: (d.boats || []).map(b => b.id !== editingPending.boatId ? b : {
           ...b, bookings: b.bookings.map(bk => bk.id !== editingPending.id ? bk : { ...updated, id: bk.id })
         })
       })});
@@ -1268,9 +1292,9 @@ function ResellerPortal({ data, save, session }) {
             return (<>
               <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
                 <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editForm.adults} max={maxAd}
-                  onChange={v => setEditForm(f => ({ ...f, adults: v, price: v * P_AD + f.children * P_CH }))} />
+                  onChange={v => setEditForm(f => ({ ...f, adults: v, price: calcTotal({ ...f, adults: v }) }))} />
                 <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editForm.children} max={maxCh}
-                  onChange={v => setEditForm(f => ({ ...f, children: v, price: f.adults * P_AD + v * P_CH }))} />
+                  onChange={v => setEditForm(f => ({ ...f, children: v, price: calcTotal({ ...f, children: v }) }))} />
               </Grid>
               <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
                 {total >= libre
@@ -1302,7 +1326,7 @@ function ResellerPortal({ data, save, session }) {
           </div>
           <div style={{ marginBottom: 14 }}>
             <Label>Remise commerciale (€)</Label>
-            <input type="number" onFocus={e => e.target.select()} min="0" value={editForm.discount || ""} onChange={e => { const d=Math.max(0,+e.target.value); setEditForm(f=>({...f,discount:d,price:Math.max(0,f.adults*P_AD+f.children*P_CH-d)})); }} style={inputStyle} placeholder="0" />
+            <input type="number" onFocus={e => e.target.select()} min="0" value={editForm.discount || ""} onChange={e => { const d=Math.max(0,+e.target.value); setEditForm(f=>({...f,discount:d,price:calcTotal({...f,discount:d})})); }} style={inputStyle} placeholder="0" />
           </div>
           <div style={{ marginBottom: 14 }}>
             <Label>Acompte versé (€)</Label>
@@ -1363,7 +1387,7 @@ function ResellerPortal({ data, save, session }) {
               const entry  = entryForDay(cell);
               const isToday = cell.toDateString() === today.toDateString();
               const isPast  = cell < new Date(today.getFullYear(), today.getMonth(), today.getDate());
-              const avail   = !isPast && entry.boats.some(b => spots(b) > 0);
+              const avail   = !isPast && (entry.boats||[]).some(b => spots(b) > 0);
               const dayLabel = cell.toLocaleDateString("fr",{weekday:"long",day:"numeric",month:"long"});
               return (
                 <button key={cell.toISOString()}
@@ -1378,7 +1402,7 @@ function ResellerPortal({ data, save, session }) {
                     {isPast && <span style={{ color:"rgba(255,255,255,0.35)", fontSize:11 }}>Passé</span>}
                   </Row>
                   <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                    {entry.boats.map(boat=>{
+                    {(entry.boats||[]).map(boat=>{
                       const r=spots(boat); const p=pct(boat);
                       const bc=r<=0?CORAL:p>70?ORANGE:"#27AE60";
                       return(
@@ -1440,7 +1464,7 @@ function ResellerPortal({ data, save, session }) {
           const entry    = entryForDay(cell);
           const isToday  = cell.toDateString() === today.toDateString();
           const isPast   = cell < new Date(today.getFullYear(), today.getMonth(), today.getDate());
-          const avail    = !isPast && entry.boats.some(b => spots(b) > 0);
+          const avail    = !isPast && (entry.boats||[]).some(b => spots(b) > 0);
           const clickable = avail;
 
           return (
@@ -1462,7 +1486,7 @@ function ResellerPortal({ data, save, session }) {
 
               {/* Both boats, every day */}
               <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 2, overflow: "hidden", boxSizing: "border-box", padding: "0 2px" }}>
-                {entry.boats.map(boat => {
+                {(entry.boats||[]).map(boat => {
                   const r  = spots(boat);
                   const p  = pct(boat);
                   const bc = barColor(boat);
@@ -2352,7 +2376,7 @@ function WooTab({ data, save, notify }) {
   const bestBoat = (dateEntry) => {
     if (!dateEntry) return null;
     // pick boat with most remaining spots
-    return dateEntry.boats.reduce((best, b) => {
+    return (dateEntry.boats || []).reduce((best, b) => {
       return (!best || spots(b) > spots(best)) ? b : best;
     }, null);
   };
@@ -2453,7 +2477,7 @@ function WooTab({ data, save, notify }) {
       if (item.status !== "repair") continue;
       const id = String(item.order.id);
       nextData = { ...nextData, dates: nextData.dates.map(d => ({
-        ...d, boats: d.boats.map(b => ({
+        ...d, boats: (d.boats || []).map(b => ({
           ...b, bookings: b.bookings.map(bk =>
             String(bk.wooOrderId ?? bk.woo_order_id ?? '') === id ? { ...bk, ...item.fix } : bk)
         }))
@@ -2476,7 +2500,7 @@ function WooTab({ data, save, notify }) {
       // Find matching boat by name
       const targetBoatName = boat.name;
       nextData = { ...nextData, dates: nextData.dates.map(d => d.label !== existingDate.label ? d : {
-        ...d, boats: d.boats.map(b => b.name !== targetBoatName ? b : {
+        ...d, boats: (d.boats || []).map(b => b.name !== targetBoatName ? b : {
           ...b, bookings: [...b.bookings, booking]
         })
       })};
@@ -2653,7 +2677,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
     if (total > du) { notify(`Total supérieur au solde dû (${fmtEur(du)})`, false); return; }
 
     const next = { ...data, dates: data.dates.map(d => d.id !== entry.id ? d : {
-      ...d, boats: d.boats.map(b => b.id !== boatId ? b : {
+      ...d, boats: (d.boats || []).map(b => b.id !== boatId ? b : {
         ...b, bookings: b.bookings.map(x => x.id !== bk.id ? x : {
           ...x,
           paiements_solde: payDraft.filter(p => (+p.montant || 0) > 0)
@@ -2681,7 +2705,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
     const d = dateFromLabel(entry.label);
     if (!d) continue;
     const _k = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const _n = e => e.boats.reduce((s, b) => s + b.bookings.length, 0);
+    const _n = e => (e.boats || []).reduce((s, b) => s + (b.bookings || []).length, 0);
     if (!byDay[_k] || _n(entry) > _n(byDay[_k])) byDay[_k] = entry;
   }
 
@@ -2728,9 +2752,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           return (<>
             <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
               <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={adding.form.adults} max={maxAd}
-                onChange={v => setAdding(a => ({ ...a, form: { ...a.form, adults: v, price: v*P_AD+a.form.children*P_CH } }))} />
+                onChange={v => setAdding(a => ({ ...a, form: { ...a.form, adults: v, price: calcTotal({ ...a.form, adults: v }) } }))} />
               <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={adding.form.children} max={maxCh}
-                onChange={v => setAdding(a => ({ ...a, form: { ...a.form, children: v, price: a.form.adults*P_AD+v*P_CH } }))} />
+                onChange={v => setAdding(a => ({ ...a, form: { ...a.form, children: v, price: calcTotal({ ...a.form, children: v }) } }))} />
             </Grid>
             <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
               {total >= libre
@@ -2762,7 +2786,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         <div style={{ marginBottom: 14 }}>
           <Label>Remise commerciale (€)</Label>
           <input type="number" onFocus={e => e.target.select()} min="0" value={adding.form.discount || ""}
-            onChange={e => { const d=Math.max(0,+e.target.value); setAdding(a=>({...a,form:{...a.form,discount:d,price:Math.max(0,a.form.adults*P_AD+a.form.children*P_CH-d)}})); }}
+            onChange={e => { const d=Math.max(0,+e.target.value); setAdding(a=>({...a,form:{...a.form,discount:d,price:calcTotal({...a.form,discount:d})}})); }}
             style={inputStyle} placeholder="0" />
         </div>
         <div style={{ marginBottom: 14 }}>
@@ -2818,9 +2842,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           return (<>
             <Grid cols="1fr 1fr" gap={12} style={{ marginBottom: 10 }}>
               <Counter label="Adultes" sublabel={`${P_AD}€/pers.`} value={editing.form.adults} max={maxAd}
-                onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, adults: v, price: v*P_AD+ed.form.children*P_CH } }))} />
+                onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, adults: v, price: calcTotal({ ...ed.form, adults: v }) } }))} />
               <Counter label="Enfants" sublabel={`${P_CH}€/pers.`} value={editing.form.children} max={maxCh}
-                onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: ed.form.adults*P_AD+v*P_CH } }))} />
+                onChange={v => setEditing(ed => ({ ...ed, form: { ...ed.form, children: v, price: calcTotal({ ...ed.form, children: v }) } }))} />
             </Grid>
             <div style={{ background: total >= libre ? RED_BG : "#F0F8FB", border: `1px solid ${total >= libre ? RED+"40" : TEAL+"20"}`, borderRadius: 8, padding: "8px 13px", marginBottom: 18, fontSize: 12, fontWeight: 600, color: total >= libre ? RED : "#666" }}>
               {total >= libre
@@ -2852,7 +2876,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
         <div style={{ marginBottom: 14 }}>
           <Label>Remise commerciale (€)</Label>
           <input type="number" onFocus={e => e.target.select()} min="0" value={editing.form.discount || ""}
-            onChange={e => { const d=Math.max(0,+e.target.value); setEditing(ed=>({...ed,form:{...ed.form,discount:d,price:Math.max(0,ed.form.adults*P_AD+ed.form.children*P_CH-d)}})); }}
+            onChange={e => { const d=Math.max(0,+e.target.value); setEditing(ed=>({...ed,form:{...ed.form,discount:d,price:calcTotal({...ed.form,discount:d})}})); }}
             style={inputStyle} placeholder="0" />
         </div>
         <div style={{ marginBottom: 14 }}>
@@ -2875,9 +2899,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
   if (selDay) {
     const entry = data.dates.find(d => d.id === selDay) || null;
     if (!entry) { setSelDay(null); return null; }
-    const allBookings = entry.boats.flatMap(boat => boat.bookings.map(bk => ({ ...bk, boat })));
-    const dp = entry.boats.reduce((s, b) => s + boatPax(b), 0);
-    const dr = entry.boats.reduce((s, b) => s + boatRev(b), 0);
+    const allBookings = (entry.boats||[]).flatMap(boat => (boat.bookings||[]).map(bk => ({ ...bk, boat })));
+    const dp = (entry.boats||[]).reduce((s, b) => s + boatPax(b), 0);
+    const dr = (entry.boats||[]).reduce((s, b) => s + boatRev(b), 0);
 
     return (
       <div>
@@ -2906,7 +2930,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
 
         {/* Boats capacity */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 }}>
-          {entry.boats.map(boat => {
+          {(entry.boats||[]).map(boat => {
             const icon = boatIcon(boat.name);
             const displayName = boatDisplay(boat.name);
             const isAdding = adding?.dateId === entry.id && adding?.boatId === boat.id;
@@ -2924,7 +2948,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                 {/* Toggle fermeture */}
                 <button onClick={() => {
                   const next = { ...data, dates: data.dates.map(d => d.id !== entry.id ? d : {
-                    ...d, boats: d.boats.map(b => b.id !== boat.id ? b : { ...b, closed: !b.closed })
+                    ...d, boats: (d.boats || []).map(b => b.id !== boat.id ? b : { ...b, closed: !b.closed })
                   })};
                   save(next);
                 }} style={{ marginTop: 8, width: "100%", padding: "7px", borderRadius: 7, border: `1px solid ${boat.closed ? GREEN+"60" : CORAL+"60"}`, background: boat.closed ? "#E8F8F1" : "#FEF0EB", color: boat.closed ? GREEN : CORAL, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
@@ -2992,15 +3016,21 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   {/* Prix */}
                   <div style={{ background:"#F0F8FB", borderRadius:8, padding:"10px 12px", display:"flex", flexDirection:"column", gap:4 }}>
                     <div style={{ display:"flex", justifyContent:"space-between" }}>
-                      <span style={{ fontSize:12, color:"#888" }}>Total</span>
-                      <span style={{ fontWeight:800, fontSize:15, color:bk.price===0?ORANGE:TEAL }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
+                      <span style={{ fontSize:12, color:"#888" }}>{bk.discount > 0 ? "Sous-total" : "Total"}</span>
+                      <span style={{ fontWeight: bk.discount > 0 ? 600 : 800, fontSize: bk.discount > 0 ? 13 : 15, color:bk.price===0?ORANGE:TEAL }}>
+                        {bk.price===0 && !bk.discount ? "Offert" : fmtEur((bk.price||0) + (bk.discount||0))}
+                      </span>
                     </div>
-                    {bk.discount > 0 && (
+                    {bk.discount > 0 && (<>
                       <div style={{ display:"flex", justifyContent:"space-between" }}>
                         <span style={{ fontSize:12, color:GREEN }}>Remise</span>
                         <span style={{ fontSize:12, fontWeight:700, color:GREEN }}>-{fmtEur(bk.discount)}</span>
                       </div>
-                    )}
+                      <div style={{ display:"flex", justifyContent:"space-between" }}>
+                        <span style={{ fontSize:12, color:"#888" }}>Total</span>
+                        <span style={{ fontWeight:800, fontSize:15, color:bk.price===0?ORANGE:TEAL }}>{bk.price===0?"Offert":fmtEur(bk.price)}</span>
+                      </div>
+                    </>)}
                     {bk.acompte_amount > 0 && (
                       <div style={{ display:"flex", justifyContent:"space-between" }}>
                         <span style={{ fontSize:12, color:"#888" }}>Acompte versé</span>
@@ -3161,9 +3191,9 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
               const key   = `${cell.getFullYear()}-${cell.getMonth()}-${cell.getDate()}`;
               const entry = byDay[key];
               const isToday = cell.toDateString() === today.toDateString();
-              const dp    = entry ? entry.boats.reduce((s,b)=>s+boatPax(b),0) : 0;
-              const dr    = entry ? entry.boats.reduce((s,b)=>s+boatRev(b),0) : 0;
-              const allBk = entry ? entry.boats.flatMap(boat=>boat.bookings.map(bk=>({...bk,boat}))) : [];
+              const dp    = entry ? (entry.boats||[]).reduce((s,b)=>s+boatPax(b),0) : 0;
+              const dr    = entry ? (entry.boats||[]).reduce((s,b)=>s+boatRev(b),0) : 0;
+              const allBk = entry ? (entry.boats || []).flatMap(boat=>(boat.bookings||[]).map(bk=>({...bk,boat}))) : [];
               const dayLabel = cell.toLocaleDateString("fr",{weekday:"long",day:"numeric",month:"long"});
 
               return (
@@ -3182,7 +3212,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                     </div>
                     {entry && (
                       <Row gap={6}>
-                        {entry.boats.map(boat=>{
+                        {(entry.boats||[]).map(boat=>{
                           const r=spots(boat); const p=pct(boat);
                           return(
                             <div key={boat.id} style={{ textAlign:"center", minWidth:42 }}>
@@ -3284,7 +3314,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
           const key   = `${cell.getFullYear()}-${cell.getMonth()}-${cell.getDate()}`;
           const entry = byDay[key];
           const isToday = cell.toDateString() === today.toDateString();
-          const dp    = entry ? entry.boats.reduce((s, b) => s + boatPax(b), 0) : 0;
+          const dp    = entry ? (entry.boats||[]).reduce((s, b) => s + boatPax(b), 0) : 0;
 
           return (
             <button key={cell.toISOString()}
@@ -3314,7 +3344,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
               </span>
               {entry && (
                 <div style={{ width: "100%" }}>
-                  {entry.boats.map(boat => {
+                  {(entry.boats||[]).map(boat => {
                     const r  = spots(boat);
                     const p  = pct(boat);
                     const bc = barColor(boat);
@@ -3373,11 +3403,13 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
     if (!data?.dates?.length) return;
     const fusion = mergeDuplicateDates(data.dates);
     const flotte = ensureFleet(fusion.dates);
-    if (fusion.merged > 0 || flotte.ajoutes > 0) {
-      save({ ...data, dates: flotte.dates });
+    const prix   = fixRemises(flotte.dates);
+    if (fusion.merged > 0 || flotte.ajoutes > 0 || prix.corrigees > 0) {
+      save({ ...data, dates: prix.dates });
       const msg = [
         fusion.merged  && `${fusion.merged} date(s) en double fusionnée(s)`,
         flotte.ajoutes && `${flotte.ajoutes} bateau(x) ajouté(s) au planning`,
+        prix.corrigees && `${prix.corrigees} remise(s) recalculée(s)`,
       ].filter(Boolean).join(" · ");
       notify(`${msg} ✓`);
     }
@@ -3392,7 +3424,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
     if (autres + tot > MAX_CAP) { notify(`💥 Capacité dépassée — ${Math.max(0, MAX_CAP - autres)} place(s) disponible(s)`); return; }
     if (!phoneOk(editing.form)) { notify("📞 Téléphone obligatoire et valide"); return; }
 
-    const next = { ...data, dates: data.dates.map(d => d.id !== editing.dateId ? d : { ...d, boats: d.boats.map(b => b.id !== editing.boatId ? b : { ...b, bookings: b.bookings.map(bk => bk.id !== editing.bkId ? bk : { ...editing.form, id: bk.id }) }) }) };
+    const next = { ...data, dates: data.dates.map(d => d.id !== editing.dateId ? d : { ...d, boats: (d.boats || []).map(b => b.id !== editing.boatId ? b : { ...b, bookings: b.bookings.map(bk => bk.id !== editing.bkId ? bk : { ...editing.form, id: bk.id }) }) }) };
     save(next); setEditing(null); notify("Modifiée ✓");
   };
   const saveAdd = () => {
@@ -3403,15 +3435,15 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
     if (tot > dispo) { notify(`💥 Capacité dépassée — ${dispo} place(s) restante(s)`); return; }
     if (!phoneOk(adding.form)) { notify("📞 Téléphone obligatoire et valide"); return; }
 
-    const next = { ...data, dates: data.dates.map(d => d.id !== adding.dateId ? d : { ...d, boats: d.boats.map(b => b.id !== adding.boatId ? b : { ...b, bookings: [...b.bookings, { ...adding.form, id: uid(), status: "confirmed", ts: Date.now() }] }) }) };
+    const next = { ...data, dates: data.dates.map(d => d.id !== adding.dateId ? d : { ...d, boats: (d.boats || []).map(b => b.id !== adding.boatId ? b : { ...b, bookings: [...b.bookings, { ...adding.form, id: uid(), status: "confirmed", ts: Date.now() }] }) }) };
     save(next); setAdding(null); notify("Ajoutée ✓");
   };
   const doDelBk = (dateId, boatId, bkId) => {
-    const next = { ...data, dates: data.dates.map(d => d.id !== dateId ? d : { ...d, boats: d.boats.map(b => b.id !== boatId ? b : { ...b, bookings: b.bookings.filter(bk => bk.id !== bkId) }) }) };
+    const next = { ...data, dates: data.dates.map(d => d.id !== dateId ? d : { ...d, boats: (d.boats || []).map(b => b.id !== boatId ? b : { ...b, bookings: b.bookings.filter(bk => bk.id !== bkId) }) }) };
     save(next); setDelBk(null); notify("Supprimée");
   };
   const approve = p => {
-    const next = { ...data, pending: data.pending.filter(x => x.id !== p.id), dates: data.dates.map(d => d.id !== p.dateId ? d : { ...d, boats: d.boats.map(b => b.id !== p.boatId ? b : { ...b, bookings: [...b.bookings, { ...p, status: "confirmed" }] }) }) };
+    const next = { ...data, pending: data.pending.filter(x => x.id !== p.id), dates: data.dates.map(d => d.id !== p.dateId ? d : { ...d, boats: (d.boats || []).map(b => b.id !== p.boatId ? b : { ...b, bookings: [...b.bookings, { ...p, status: "confirmed" }] }) }) };
     save(next); notify("Approuvée ✓");
   };
   const reject = p => { save({ ...data, pending: data.pending.filter(x => x.id !== p.id) }); notify("Refusée"); };
@@ -3496,7 +3528,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
                 {parsed.map(d => (
                   <div key={d.id} style={{ background: "#F8FBFC", borderRadius: 9, padding: "10px 14px", marginBottom: 6, border: "1px solid #deeaf0", fontSize: 13 }}>
                     <strong style={{ color: TEAL }}>{d.label}</strong>
-                    {d.boats.map(b => <div key={b.id} style={{ color: "#666", marginLeft: 8, marginTop: 3 }}>{`${boatIcon(b.name)} ${boatDisplay(b.name)}`} — {b.bookings.length} rés., {boatPax(b)} pax, {fmtEur(boatRev(b))}</div>)}
+                    {(d.boats || []).map(b => <div key={b.id} style={{ color: "#666", marginLeft: 8, marginTop: 3 }}>{`${boatIcon(b.name)} ${boatDisplay(b.name)}`} — {b.bookings.length} rés., {boatPax(b)} pax, {fmtEur(boatRev(b))}</div>)}
                   </div>
                 ))}
               </div>
@@ -3744,7 +3776,7 @@ function SkippersMgmtTab({ skData, saveSkData, data }) {
 
   const RecapView = () => {
     const allBk = data.dates.flatMap(date =>
-      date.boats.flatMap(boat =>
+      (date.boats || []).flatMap(boat =>
         boat.bookings.filter(bk=>bk.paiements_solde?.length>0).map(bk=>({...bk,dateLabel:date.label}))
       )
     );
@@ -3943,7 +3975,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
     };
 
     const next = { ...data, dates: data.dates.map(d => d.label !== selDate.label ? d : {
-      ...d, boats: d.boats.map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBk.id ? bk : updatedBk) }))
+      ...d, boats: (d.boats || []).map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBk.id ? bk : updatedBk) }))
     })};
     save(next);
     setSelBk(null); setPayForm([]);
@@ -4005,7 +4037,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
         solde_date: new Date().toISOString(),
       };
       const next = { ...data, dates: data.dates.map(d => d.label !== dateEntry.label ? d : {
-        ...d, boats: d.boats.map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBkPay.id ? bk : updatedBk) }))
+        ...d, boats: (d.boats || []).map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBkPay.id ? bk : updatedBk) }))
       })};
       save(next);
       setSelBkPay(null); setPayFormAll([]);
@@ -4017,7 +4049,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
       const entry = data.dates.find(d => d.label === selEntry);
       if (!entry) { setSelEntry(null); return null; }
       const planning = skData?.planning?.[entry.label] || {};
-      const allBk = entry.boats.flatMap(boat => boat.bookings.map(bk => ({...bk, boat})));
+      const allBk = (entry.boats||[]).flatMap(boat => (boat.bookings||[]).map(bk => ({...bk, boat})));
       const totalReste = allBk.reduce((s,bk) => s + Math.max(0, bk.price-(bk.acompte_amount||0)-(bk.solde_encaisse||0)), 0);
 
       return (
@@ -4047,7 +4079,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
             )}
           </div>
 
-          {entry.boats.map(boat => {
+          {(entry.boats||[]).map(boat => {
             const icon = boatIcon(boat.name);
             const dname = boatDisplay(boat.name);
 
@@ -4157,7 +4189,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           </div>
         )}
         {sortedDates.map(entry => {
-          const allBk  = entry.boats.flatMap(b => b.bookings);
+          const allBk  = (entry.boats || []).flatMap(b => (b.bookings||[]));
           const dp     = allBk.reduce((s,b)=>s+b.adults+b.children,0);
           const dr     = allBk.reduce((s,b)=>s+b.price,0);
           const reste  = allBk.reduce((s,b)=>s+Math.max(0,b.price-(b.acompte_amount||0)-(b.solde_encaisse||0)),0);
@@ -4209,7 +4241,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
         <div style={{ background:"#fff", borderRadius:14, padding:"16px 18px", marginBottom:14, border:"1px solid #deeaf0" }}>
           <div style={{ fontWeight:700, color:TEAL, fontSize:14, marginBottom:12 }}>⚓ Affectation des skippers</div>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:10 }}>
-            {todayEntry.boats.map(boat => {
+            {(todayEntry.boats||[]).map(boat => {
               const bKey      = boatKey(boat.name);
               const assigned  = planning[bKey];
               const allSkip   = skData?.skippers || [];
@@ -4233,7 +4265,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
         </div>
 
         {/* Bookings per boat */}
-        {todayEntry.boats.map(boat => {
+        {(todayEntry.boats||[]).map(boat => {
           const icon = boatIcon(boat.name);
           const dname = boatDisplay(boat.name);
           const totalReste = boat.bookings.reduce((s,bk) => s + Math.max(0, bk.price - (bk.acompte_amount||0) - (bk.solde_encaisse||0)), 0);
@@ -4401,7 +4433,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                 {affectes.map(({ b, sk }) => (
                   <div key={b.key} style={{ fontSize:7, background:sk.color, color:"#fff", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{b.icon} {sk.name}</div>
                 ))}
-                {(() => { const d = data.dates.find(x=>x.label===label); if(!d) return null; return d.boats.filter(b=>b.closed).map(b=><div key={b.id} style={{ fontSize:7, background:"#ddd", color:"#888", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{boatIcon(b.name)} Off</div>); })()}
+                {(() => { const d = data.dates.find(x=>x.label===label); if(!d) return null; return (d.boats || []).filter(b=>b.closed).map(b=><div key={b.id} style={{ fontSize:7, background:"#ddd", color:"#888", borderRadius:4, padding:"1px 4px", fontWeight:700, width:"100%", textAlign:"center" }}>{boatIcon(b.name)} Off</div>); })()}
               </div>
             );
           })}
@@ -4440,7 +4472,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
             if (!jour) continue;
             for (const b of BOATS) {
               if (affect?.[b.key] !== skipperUser.id) continue;
-              const bateau = jour.boats.find(x => x.name === b.name);
+              const bateau = (jour.boats || []).find(x => x.name === b.name);
               const pax = bateau ? boatPax(bateau) : 0;
               if (pax === 0) continue;                              // resté à quai
               if (d.getFullYear() === curYear) {
@@ -5296,7 +5328,7 @@ function MoveDialog({ data, save, entry, boat, bk, onClose, onDone }) {
     if (!cible) return null;
     const d = data.dates.find(x => dateKeyOf(x.label) === dateKeyOf(cible));
     if (!d) return MAX_CAP;
-    const b = d.boats.find(x => x.name === nomBateau);
+    const b = (d.boats || []).find(x => x.name === nomBateau);
     if (!b) return MAX_CAP;
     if (b.closed) return -1;
     const occupes = b.bookings.filter(x => x.id !== bk.id).reduce((s,x) => s + x.adults + x.children, 0);
@@ -5419,15 +5451,20 @@ function messageConfirmationWA(bk, dateLabel) {
     en ? `${en} enfant${en > 1 ? "s" : ""}` : null,
   ].filter(Boolean).join(" + ");
 
+  const remise  = bk.discount || 0;
+  const brut    = (bk.price || 0) + remise;
   const acompte = (bk.acompte_amount || 0) + (bk.solde_encaisse || 0);
   const reste   = Math.max(0, (bk.price || 0) - acompte);
   // Les moyens de paiement ne sont rappelés que s'il reste à payer
   const MOYENS  = "(CB, espèce, chèques vacances)";
+  const debut   = remise > 0
+    ? `💰 Total ${fmtEur(brut)} — remise ${fmtEur(remise)}`
+    : `💰 Total ${fmtEur(brut)}`;
   const argent  = reste === 0
-    ? `💰 Total ${fmtEur(bk.price || 0)} — intégralement réglé`
+    ? `${debut} — intégralement réglé`
     : acompte > 0
-      ? `💰 Total ${fmtEur(bk.price || 0)} — acompte versé ${fmtEur(acompte)} — reste ${fmtEur(reste)} à régler à l'embarquement ${MOYENS}`
-      : `💰 Total ${fmtEur(bk.price || 0)} à régler à l'embarquement ${MOYENS}`;
+      ? `${debut} — acompte versé ${fmtEur(acompte)} — reste ${fmtEur(reste)} à régler à l'embarquement ${MOYENS}`
+      : `${debut} à régler à l'embarquement ${MOYENS}`;
 
   return [
     `Bonjour ${bk.name || ""},`.trim(),
