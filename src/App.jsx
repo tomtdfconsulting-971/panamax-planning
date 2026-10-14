@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.13-aa";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.13-ab";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -742,17 +742,19 @@ function ResellerPortal({ data, save, session }) {
   const [step,  setStep]  = useState("cal"); // cal | boat | form | ok | mes-resa | edit-resa
   const [selDate,       setSelDate]       = useState(null);
   const [selBoat,       setSelBoat]       = useState(null);
-  // Un commercial réserve en son nom : le référent est connu dès l'ouverture
-  const formVierge = () => ({ ...BLANK, source: session?.role === "commercial" ? (session.refKey || "") : "" });
+
+  // Un commercial comme un skipper vend sous sa propre identité, sans pouvoir
+  // en changer ; seul l'admin choisit librement le référent qu'il consulte.
+  const isLockedCommercial = session?.role === "commercial" || session?.role === "skipper";
+
+  // Le référent est donc connu dès l'ouverture du formulaire
+  const formVierge = () => ({ ...BLANK, source: isLockedCommercial ? (session.refKey || "") : "" });
   const [form,          setForm]          = useState(formVierge);
   const [editingPending, setEditingPending] = useState(null);
   const [moveBk,         setMoveBk]         = useState(null);   // réservation en cours de déplacement
   const [derniereResa,   setDerniereResa]   = useState(null);   // pour la confirmation WhatsApp
   const [editForm,       setEditForm]      = useState({ ...BLANK });
   const [delPending,     setDelPending]    = useState(null);
-  // Un commercial est identifié par son compte et ne peut pas en changer ;
-  // l'admin, lui, choisit librement le référent qu'il consulte.
-  const isLockedCommercial = session?.role === "commercial";
   const [identity,       setIdentity]      = useState(
     isLockedCommercial ? (session.refKey || null) : null
   );
@@ -4673,7 +4675,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
 const ROLES = [
   { id:"admin",      label:"Administrateur", icon:"🔐", color:"#0D3D52", desc:"Accès total à l'application" },
   { id:"commercial", label:"Commercial",     icon:"🛥️", color:"#1A5F7A", desc:"Réservations et suivi de ses acomptes" },
-  { id:"skipper",    label:"Skipper",        icon:"⚓", color:"#2471A3", desc:"Planning et encaissement des soldes" },
+  { id:"skipper",    label:"Skipper",        icon:"⚓", color:"#2471A3", desc:"Planning, encaissements et vente" },
 ];
 
 function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
@@ -4730,12 +4732,14 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
   const create = async () => {
     if (!form.email.trim() || !form.password) { toast("Email et mot de passe requis", false); return; }
     if (form.password.length < 6)             { toast("Mot de passe : 6 caractères minimum", false); return; }
-    if (form.role === "commercial" && !form.refKey)   { toast("Choisissez le référent associé", false); return; }
+    if ((form.role === "commercial" || form.role === "skipper") && !form.refKey) {
+      toast("Choisissez le référent associé", false); return;
+    }
     if (form.role === "skipper"    && !form.skipperId) { toast("Choisissez le skipper associé", false); return; }
     if (form.role === "skipper" && form.skipperId === "__new" && !form.name.trim()) {
       toast("Renseignez le nom du nouveau skipper", false); return;
     }
-    if (form.role === "commercial" && form.refKey === "__new" && !form.name.trim()) {
+    if (form.refKey === "__new" && !form.name.trim()) {
       toast("Renseignez le nom du nouveau référent", false); return;
     }
 
@@ -4744,7 +4748,7 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
 
     // Créer le référent au préalable pour l'associer au compte
     let payload = { ...form };
-    if (form.role === "commercial" && form.refKey === "__new") {
+    if (form.refKey === "__new") {
       const key   = makeRefKey(form.name);
       const used  = Object.values(sources).map(s => s.color);
       const color = SK_PALETTE.find(col => !used.includes(col)) || SK_PALETTE[Object.keys(sources).length % SK_PALETTE.length];
@@ -4894,9 +4898,10 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
             </div>
           </div>
 
-          {form.role === "commercial" && (
+          {(form.role === "commercial" || form.role === "skipper") && (
             <div style={{ marginBottom:14 }}>
-              <FSelect label="Référent associé" value={form.refKey} onChange={e=>setForm(f=>({...f, refKey:e.target.value}))}>
+              <FSelect label={form.role === "skipper" ? "Référent associé (le skipper vend aussi)" : "Référent associé"}
+                value={form.refKey} onChange={e=>setForm(f=>({...f, refKey:e.target.value}))}>
                 <option value="">— Sélectionner —</option>
                 {Object.entries(sources).map(([k,v]) => (
                   <option key={k} value={k}>
@@ -4993,7 +4998,7 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                     {ROLES.map(r => <option key={r.id} value={r.id}>{r.icon} {r.label}</option>)}
                   </FSelect>
                 </div>
-                {editF.role === "commercial" && (
+                {(editF.role === "commercial" || editF.role === "skipper") && (
                   <div style={{ marginBottom:12 }}>
                     <FSelect label="Référent associé" value={editF.refKey || ""} onChange={e=>setEditF(f=>({...f, refKey:e.target.value}))}>
                       <option value="">— Sélectionner —</option>
@@ -5024,9 +5029,9 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                   </span>
                 </Row>
 
-                {u.role === "commercial" && (
+                {u.role !== "admin" && (
                   <div style={{ fontSize:11.5, color:"#888", marginBottom:8 }}>
-                    Référent : {u.refKey ? (sources[u.refKey]?.label || u.refKey) : <span style={{ color:CORAL, fontWeight:600 }}>non défini</span>}
+                    Référent : {u.refKey ? (sources[u.refKey]?.label || u.refKey) : <span style={{ color:CORAL, fontWeight:600 }}>non défini — ne peut pas vendre</span>}
                   </div>
                 )}
                 {u.role === "skipper" && (() => {
@@ -5619,6 +5624,7 @@ function AuthenticatedApp({ session }) {
             <div style={{ color: "#fff", fontSize: 21, fontWeight: 800 }}>Panamax Excursions</div>
             <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, marginTop: 3 }}>
               {session.name} · {session.role === "admin" ? "Administrateur" : "Portail Commercial"}
+              {session.role === "skipper" && " · Skipper"}
             </div>
           </div>
           <ResellerPortal data={data} save={save} session={session} />
@@ -5648,7 +5654,20 @@ function AuthenticatedApp({ session }) {
       {/* ── Barre de navigation selon le rôle ── */}
       <div style={{ position: "fixed", bottom: 16, right: 14, zIndex: 200, display: "flex", flexDirection: "column", gap: 7, alignItems: "flex-end" }}>
 
-        {/* L'admin circule librement entre les trois vues */}
+        {/* L'admin circule entre les trois vues ; le skipper vend aussi,
+            il bascule donc entre son espace et le portail commercial */}
+        {!isAdmin && session.role === "skipper" && (
+          <div style={{ display: "flex", gap: 5, background: "rgba(13,61,82,0.9)", padding: 4, borderRadius: 22, boxShadow: "0 2px 10px rgba(0,0,0,0.2)" }}>
+            {[["reseller", "🛥️"], ["skipper", "⚓"]].map(([m, icon]) => (
+              <button key={m} onClick={() => setMode(m)}
+                style={{ background: mode === m ? "#fff" : "transparent", border: "none", cursor: "pointer",
+                         fontSize: 14, padding: "6px 11px", borderRadius: 18, lineHeight: 1 }}>
+                {icon}
+              </button>
+            ))}
+          </div>
+        )}
+
         {isAdmin && (
           <div style={{ display: "flex", gap: 5, background: "rgba(13,61,82,0.9)", padding: 4, borderRadius: 22, boxShadow: "0 2px 10px rgba(0,0,0,0.2)" }}>
             {[["reseller", "🛥️"], ["skipper", "⚓"], ["admin", "🔐"]].map(([m, icon]) => (
