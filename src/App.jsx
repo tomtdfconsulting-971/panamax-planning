@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.13-ab";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.14-ac";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -3933,7 +3933,6 @@ function PayLines({ lines, onChange, compact }) {
 function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) {
   const today = new Date();
   const [tab,     setTab]     = useState("today");   // today | planning | exchange
-  const [selDate, setSelDate] = useState(null);       // date entry for encaissement
   const [selBk,   setSelBk]   = useState(null);       // booking being paid
   const [payForm, setPayForm] = useState([]);          // [{ methode, montant }]
   const [notif,   setNotif]   = useState(null);
@@ -3963,27 +3962,46 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
     .sort();
 
   // Save payment for a booking
-  const savePayment = () => {
-    const total = payForm.reduce((s, p) => s + (p.montant||0), 0);
-    const bkReste = Math.max(0, selBk.price - (selBk.acompte_amount||0));
-    if (total > bkReste) { toast("Montant supérieur au reste à payer", false); return; }
+  // Enregistrement d'un encaissement, commun aux deux onglets du skipper.
+  // Les règlements s'ajoutent à ceux déjà saisis, ils ne les remplacent pas.
+  const enregistrerEncaissement = (bk, dateEntry, lignes) => {
+    if (!bk)        { toast("Réservation introuvable", false); return false; }
+    if (!dateEntry) { toast("Date introuvable", false); return false; }
+
+    const nouvelles = lignes
+      .filter(p => (+p.montant || 0) > 0)
+      .map(p => ({ methode: p.methode, montant: +p.montant }));
+    const total = nouvelles.reduce((s, p) => s + p.montant, 0);
+    if (total <= 0) { toast("Saisissez au moins un montant", false); return false; }
+
+    const dejaVerse = bk.solde_encaisse || 0;
+    const reste = Math.max(0, (bk.price || 0) - (bk.acompte_amount || 0) - dejaVerse);
+    if (total > reste) { toast(`Montant supérieur au reste à payer (${fmtEur(reste)})`, false); return false; }
 
     const updatedBk = {
-      ...selBk,
-      paiements_solde: payForm.filter(p => p.montant > 0),
+      ...bk,
+      paiements_solde: [...(bk.paiements_solde || []), ...nouvelles],
       skipper_encaisseur: skipperUser.id,
-      solde_encaisse: total,
+      solde_encaisse: dejaVerse + total,
       solde_date: new Date().toISOString(),
     };
 
-    const next = { ...data, dates: data.dates.map(d => d.label !== selDate.label ? d : {
-      ...d, boats: (d.boats || []).map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBk.id ? bk : updatedBk) }))
-    })};
-    save(next);
-    setSelBk(null); setPayForm([]);
+    save({ ...data, dates: data.dates.map(d => d.id !== dateEntry.id ? d : {
+      ...d, boats: (d.boats || []).map(b => ({
+        ...b, bookings: (b.bookings || []).map(x => x.id !== bk.id ? x : updatedBk)
+      }))
+    })});
+
+    const resume = nouvelles
+      .map(p => `${PAY_METHODS.find(m => m.id === p.methode)?.label || p.methode} ${fmtEur(p.montant)}`)
+      .join(" + ");
+    sendTelegramNotif(`💳 Solde encaissé\n⚓ ${skipperUser.name}\n👤 ${bk.name}\n📅 ${dateEntry.label}\n💰 ${resume}`);
     toast("Solde encaissé ✓");
-    const methodsStr = payForm.filter(p=>p.montant>0).map(p=>`${PAY_METHODS.find(m=>m.id===p.methode)?.label||p.methode} ${p.montant}€`).join(' + ');
-    sendTelegramNotif(`💳 Solde encaissé\n⚓ ${skipperUser.name}\n👤 ${selBk.name}\n📅 ${selDate?.label||todayLabel}\n💰 ${methodsStr}`);
+    return true;
+  };
+
+  const savePayment = () => {
+    if (enregistrerEncaissement(selBk, todayEntry, payForm)) { setSelBk(null); setPayForm([]); }
   };
 
   // Move booking from one boat to another
@@ -4028,22 +4046,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
       .sort((a, b) => (a._date||new Date(0)) - (b._date||new Date(0)));
 
     const savePaymentAll = (dateEntry) => {
-      const total = payFormAll.reduce((s, p) => s + (p.montant||0), 0);
-      const reste = Math.max(0, selBkPay.price - (selBkPay.acompte_amount||0) - (selBkPay.solde_encaisse||0));
-      if (total > reste) { toast("Montant supérieur au reste à payer", false); return; }
-      const updatedBk = {
-        ...selBkPay,
-        paiements_solde: payFormAll.filter(p => p.montant > 0),
-        skipper_encaisseur: skipperUser.id,
-        solde_encaisse: (selBkPay.solde_encaisse||0) + total,
-        solde_date: new Date().toISOString(),
-      };
-      const next = { ...data, dates: data.dates.map(d => d.label !== dateEntry.label ? d : {
-        ...d, boats: (d.boats || []).map(b => ({ ...b, bookings: b.bookings.map(bk => bk.id !== selBkPay.id ? bk : updatedBk) }))
-      })};
-      save(next);
-      setSelBkPay(null); setPayFormAll([]);
-      toast("Solde encaissé ✓");
+      if (enregistrerEncaissement(selBkPay, dateEntry, payFormAll)) { setSelBkPay(null); setPayFormAll([]); }
     };
 
     // Detail view for a selected date
