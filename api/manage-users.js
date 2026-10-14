@@ -82,7 +82,8 @@ export default async function handler(req, res) {
           email: email.trim().toLowerCase(),
           name:  name || email,
           role,
-          refKey:    role === 'commercial' ? (refKey || null) : null,
+          // Les skippers vendent aussi : ils ont donc un référent comme les commerciaux
+          refKey:    role === 'admin' ? null : (refKey || null),
           active:    true,
           createdAt: new Date().toISOString(),
           createdBy: caller.email,
@@ -116,7 +117,7 @@ export default async function handler(req, res) {
         if (name) data.users[uid].name = name;
         if (role && ['admin', 'commercial', 'skipper'].includes(role)) {
           data.users[uid].role   = role;
-          data.users[uid].refKey = role === 'commercial' ? (refKey || data.users[uid].refKey || null) : null;
+          data.users[uid].refKey = role === 'admin' ? null : (refKey || data.users[uid].refKey || null);
         } else if (refKey !== undefined) {
           data.users[uid].refKey = refKey;
         }
