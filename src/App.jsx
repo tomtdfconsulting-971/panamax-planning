@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 
 // ── Constants ──────────────────────────────────────────────────
-const APP_VERSION = "2026.10.14-ac";   // à incrémenter à chaque livraison
+const APP_VERSION = "2026.10.26-ad";   // à incrémenter à chaque livraison
 const MAX_CAP   = 12;
 const uid      = () => Math.random().toString(36).slice(2, 9);
 const PAY_METHODS = [
@@ -2646,7 +2646,7 @@ function WooTab({ data, save, notify }) {
 // ════════════════════════════════════════════════════════════════
 // ADMIN CALENDAR COMPONENT
 // ════════════════════════════════════════════════════════════════
-function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdding, delBk, setDelBk, saveEdit, saveAdd, doDelBk, copied, copyWA }) {
+function AdminCalendar({ data, save, notify, session, editing, setEditing, adding, setAdding, delBk, setDelBk, saveEdit, saveAdd, doDelBk, copied, copyWA }) {
   const today = new Date();
   const [year,     setYear]     = useState(today.getFullYear());
   const [month,    setMonth]    = useState(today.getMonth());
@@ -2957,7 +2957,7 @@ function AdminCalendar({ data, save, notify, editing, setEditing, adding, setAdd
                   {boat.closed ? "✅ Ré-ouvrir à la vente" : "🚫 Fermer à la vente"}
                 </button>
                 {!boat.closed && (
-                  <button onClick={() => { setAddBoat(boat); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK } }); setAdminStep("add-form"); }}
+                  <button onClick={() => { setAddBoat(boat); setAdding({ dateId: entry.id, boatId: boat.id, form: { ...BLANK, source: session?.refKey || "" } }); setAdminStep("add-form"); }}
                     style={{ marginTop: 6, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 12px", borderRadius: 8, background: TEAL, border: "none", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
                     + Ajouter une réservation
                   </button>
@@ -3489,7 +3489,7 @@ function AdminView({ data, save, sources, saveSources, skData, saveSkData, reloa
 
         {/* ── Planning tab ── */}
         {tab === "planning" && (<>
-          <AdminCalendar data={data} save={save} notify={notify} editing={editing} setEditing={setEditing} adding={adding} setAdding={setAdding} delBk={delBk} setDelBk={setDelBk} saveEdit={saveEdit} saveAdd={saveAdd} doDelBk={doDelBk} copied={copied} copyWA={copyWA} />
+          <AdminCalendar data={data} save={save} notify={notify} session={session} editing={editing} setEditing={setEditing} adding={adding} setAdding={setAdding} delBk={delBk} setDelBk={setDelBk} saveEdit={saveEdit} saveAdd={saveAdd} doDelBk={doDelBk} copied={copied} copyWA={copyWA} />
 
 
         </>)}
@@ -3938,6 +3938,7 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
   const [notif,   setNotif]   = useState(null);
   const [exchReq, setExchReq] = useState(null);       // exchange request being composed
   const [moveBk,  setMoveBk]  = useState(null);       // réservation en cours de déplacement
+  const [echangeAvec, setEchangeAvec] = useState(null);   // collègue choisi pour un échange
 
   // ── États des sous-vues, remontés ici pour éviter la perte de focus ──
   const [openBkId,   setOpenBkId]   = useState(null);            // TodayTab
@@ -4110,7 +4111,13 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                       <Row style={{ marginBottom:4 }}>
                         <span style={{ background:srcCol, color:"#fff", fontSize:10, padding:"2px 8px", borderRadius:7, fontWeight:700, flexShrink:0 }}>{src}</span>
                         <div style={{ flex:1, marginLeft:8 }}>
-                          <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</div>
+                          <Row gap={6} style={{ alignItems:"center", flexWrap:"wrap" }}>
+                            <span style={{ fontSize:10, fontWeight:700, color:"#fff", padding:"2px 8px", borderRadius:6,
+                                           background: bk.source === "woo" ? "#8E44AD" : (SOURCES[bk.source]?.color || "#999") }}>
+                              {bk.source === "woo" ? "🌐 Web" : (SOURCES[bk.source]?.label || "—")}
+                            </span>
+                            <span style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</span>
+                          </Row>
                           <div style={{ fontSize:11, color:"#888" }}>
                             👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""}
                             
@@ -4304,7 +4311,13 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
                     <div style={{ padding:"12px 16px" }}>
                       <Row style={{ marginBottom:6 }}>
                         <div style={{ flex:1 }}>
-                          <div style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</div>
+                          <Row gap={6} style={{ alignItems:"center", flexWrap:"wrap" }}>
+                            <span style={{ fontSize:10, fontWeight:700, color:"#fff", padding:"2px 8px", borderRadius:6,
+                                           background: bk.source === "woo" ? "#8E44AD" : (SOURCES[bk.source]?.color || "#999") }}>
+                              {bk.source === "woo" ? "🌐 Web" : (SOURCES[bk.source]?.label || "—")}
+                            </span>
+                            <span style={{ fontWeight:700, color:DARK, fontSize:13 }}>{bk.name}</span>
+                          </Row>
                           <div style={{ fontSize:11, color:"#888", marginTop:2 }}>
                             👥 {bk.adults}ad{bk.children?`+${bk.children}enf`:""} · {fmtEur(bk.price)}
                             
@@ -4544,7 +4557,10 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
   const ExchangeTab = () => {
     const planning  = skData?.planning || {};
     const allSkippers = skData?.skippers || [];
-    const otherSkipper = allSkippers.find(s => s.id !== skipperUser.id);
+    // Tous les collègues actifs sont éligibles : avec trois skippers, il faut
+    // pouvoir désigner lequel, et non prendre systématiquement le premier.
+    const collegues = allSkippers.filter(s => s.id !== skipperUser.id && s.active !== false);
+    const otherSkipper = collegues.find(s => s.id === echangeAvec) || null;
 
     // My upcoming slots
     const mySlots = Object.entries(planning)
@@ -4588,7 +4604,30 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
     return (
       <div>
         <div style={{ background:"#FFF8EE", borderRadius:12, padding:"12px 16px", marginBottom:16, border:`1px solid ${ORANGE}30`, fontSize:13, color:"#666", lineHeight:1.6 }}>
-          💡 Sélectionnez un de vos créneaux et un créneau de {otherSkipper?.name||"l'autre skipper"} pour les échanger. L'échange est <strong>immédiat et définitif</strong>.
+          💡 Choisissez un collègue, puis un de vos créneaux et un des siens. L'échange est <strong>immédiat et définitif</strong>.
+        </div>
+
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"#888", textTransform:"uppercase", letterSpacing:0.6, marginBottom:8 }}>
+            Échanger avec
+          </div>
+          {collegues.length === 0 && (
+            <div style={{ color:"#bbb", fontSize:12.5 }}>Aucun autre skipper actif.</div>
+          )}
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            {collegues.map(s => (
+              <button key={s.id} onClick={() => { setEchangeAvec(s.id); setMySlot(null); setTheirSlot(null); }}
+                style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 14px", borderRadius:10, cursor:"pointer",
+                         border:`2px solid ${echangeAvec === s.id ? s.color : "#ddd"}`,
+                         background: echangeAvec === s.id ? `${s.color}15` : "#fff" }}>
+                <span style={{ width:22, height:22, borderRadius:11, background:s.color, color:"#fff",
+                               fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  {s.name[0]}
+                </span>
+                <span style={{ fontWeight:700, fontSize:13, color: echangeAvec === s.id ? s.color : DARK }}>{s.name}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))", gap:12 }}>
@@ -4603,9 +4642,10 @@ function SkipperView({ data, save, skData, saveSkData, skipperUser, onLogout }) 
           <div>
             <div style={{ fontWeight:700, color:otherSkipper?.color||"#888", fontSize:13, marginBottom:8 }}>
               <div style={{ width:10, height:10, borderRadius:5, background:otherSkipper?.color||"#888", display:"inline-block", marginRight:6 }}/>
-              Créneaux de {otherSkipper?.name||"—"}
+              Créneaux de {otherSkipper?.name || "…"}
             </div>
-            {theirSlots.length===0 && <div style={{ color:"#bbb", fontSize:12 }}>Aucun créneau disponible</div>}
+            {!otherSkipper && <div style={{ color:"#bbb", fontSize:12 }}>Choisissez d'abord un collègue</div>}
+            {otherSkipper && theirSlots.length===0 && <div style={{ color:"#bbb", fontSize:12 }}>Aucun créneau à venir</div>}
             {theirSlots.map((slot,i) => <SlotBtn key={i} slot={slot} selected={theirSlot?.label===slot.label&&theirSlot?.boatKey===slot.boatKey} onSelect={setTheirSlot} color={otherSkipper?.color||"#888"} />)}
           </div>
         </div>
@@ -4735,7 +4775,7 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
   const create = async () => {
     if (!form.email.trim() || !form.password) { toast("Email et mot de passe requis", false); return; }
     if (form.password.length < 6)             { toast("Mot de passe : 6 caractères minimum", false); return; }
-    if ((form.role === "commercial" || form.role === "skipper") && !form.refKey) {
+    if (form.role !== "admin" && !form.refKey) {
       toast("Choisissez le référent associé", false); return;
     }
     if (form.role === "skipper"    && !form.skipperId) { toast("Choisissez le skipper associé", false); return; }
@@ -4901,9 +4941,10 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
             </div>
           </div>
 
-          {(form.role === "commercial" || form.role === "skipper") && (
-            <div style={{ marginBottom:14 }}>
-              <FSelect label={form.role === "skipper" ? "Référent associé (le skipper vend aussi)" : "Référent associé"}
+          <div style={{ marginBottom:14 }}>
+              <FSelect label={form.role === "admin" ? "Référent associé (pour ses propres ventes)"
+                            : form.role === "skipper" ? "Référent associé (le skipper vend aussi)"
+                            : "Référent associé"}
                 value={form.refKey} onChange={e=>setForm(f=>({...f, refKey:e.target.value}))}>
                 <option value="">— Sélectionner —</option>
                 {Object.entries(sources).map(([k,v]) => (
@@ -4918,8 +4959,7 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                   ? "Un nouveau référent sera créé avec le nom saisi ci-dessous."
                   : "Détermine les réservations visibles dans « Mes réservations »."}
               </div>
-            </div>
-          )}
+          </div>
 
           {form.role === "skipper" && (
             <div style={{ marginBottom:14 }}>
@@ -5001,7 +5041,7 @@ function UsersTab({ sources, saveSources, session, skData, saveSkData }) {
                     {ROLES.map(r => <option key={r.id} value={r.id}>{r.icon} {r.label}</option>)}
                   </FSelect>
                 </div>
-                {(editF.role === "commercial" || editF.role === "skipper") && (
+                {true && (
                   <div style={{ marginBottom:12 }}>
                     <FSelect label="Référent associé" value={editF.refKey || ""} onChange={e=>setEditF(f=>({...f, refKey:e.target.value}))}>
                       <option value="">— Sélectionner —</option>
@@ -5482,7 +5522,7 @@ function messageConfirmationWA(bk, dateLabel) {
     `👥 ${qui || "—"}`,
     argent,
     ``,
-    `Le rendez-vous est à 8h15 au bateau, pour un départ à 8h30.`,
+    `Le rendez-vous est à 8h30 au bateau, pour un départ à 8h45.`,
     ``,
     `Pour trouver le bateau, recherchez « Panamax Excursions » dans votre GPS. Vous trouverez à 100 m du bateau un grand parking gratuit.`,
     ``,
