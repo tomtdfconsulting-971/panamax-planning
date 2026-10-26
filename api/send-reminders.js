@@ -144,8 +144,9 @@ export default async function handler(req, res) {
   const ok = authHeader === `Bearer ${process.env.CRON_SECRET}` || secretQS === process.env.CRON_SECRET;
   if (!ok) return res.status(401).json({ error: 'Non autorisé' });
 
-  // ?days=N pour tester sur un autre horizon (défaut : 7 jours)
-  const horizon = parseInt(req.query?.days) || 7;
+  // Le rappel part la veille du départ, à 18h30 heure de Guadeloupe.
+  // ?days=N élargit la fenêtre pour un rattrapage manuel.
+  const horizon = parseInt(req.query?.days) || 1;
   // ?dry=1 pour simuler sans envoyer d'email
   const dryRun  = req.query?.dry === '1';
   // ?reset=1 pour effacer les marqueurs « rappel déjà envoyé » (tests)
@@ -192,9 +193,10 @@ export default async function handler(req, res) {
       const dateObj = dateFromLabel(date.label);
       if (!dateObj) continue;
 
-      // Fenêtre glissante : excursion dans 0 à `horizon` jours (7 par défaut)
+      // Excursion de demain par défaut ; `days=N` élargit à 1..N pour rattraper.
+      // Le jour même est exclu : à 18h30 la veille, l'excursion du jour est passée.
       const diff = Math.round((dateObj - today) / (1000 * 60 * 60 * 24));
-      if (diff < 0 || diff > horizon) continue;
+      if (diff < 1 || diff > horizon) continue;
 
       for (const boat of date.boats) {
         for (const bk of boat.bookings) {
@@ -258,7 +260,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      fenetre: `excursions dans 0 à ${horizon} jour(s)`,
+      fenetre: horizon === 1 ? "excursions de demain" : `excursions dans 1 à ${horizon} jour(s)`,
       dryRun, sent, marques: marked.length, markersSaved, results, skipped,
     });
 
